@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { HelpCircleIcon, MessageSquareIcon, SearchIcon } from 'lucide-react';
+import { HelpCircleIcon, MessageSquareIcon, MoonIcon, SearchIcon, SunIcon } from 'lucide-react';
 import { EnvironmentBadge } from './EnvironmentBadge';
 import { SystemHealthIndicator } from '../ui/SystemHealthIndicator';
 import { NotificationCenter } from './NotificationCenter';
 import { FeedbackModal } from '../ui/FeedbackModal';
 import { HelpShortcutsModal } from '../ui/HelpShortcutsModal';
+import { useTheme } from '../../contexts/ThemeContext';
 
 interface TopBarProps {
   onOpenPalette: () => void;
@@ -13,6 +14,8 @@ interface TopBarProps {
 export function TopBar({ onOpenPalette }: TopBarProps) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const { resolvedTheme, toggleTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
 
   return (
     <>
@@ -51,6 +54,17 @@ export function TopBar({ onOpenPalette }: TopBarProps) {
 
           {/* Notifications Center */}
           <NotificationCenter />
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-line bg-surface text-muted transition hover:border-line-strong hover:bg-subtle hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+            title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+            aria-pressed={isDark}
+          >
+            {isDark ? <SunIcon className="h-4 w-4" aria-hidden /> : <MoonIcon className="h-4 w-4" aria-hidden />}
+          </button>
 
           {/* Help & Shortcuts Button */}
           <button
