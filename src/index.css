@@ -1,0 +1,94 @@
+/* @import url() FONT IMPORTS MUST ALWAYS BE AT THE VERY TOP OF THIS FILE, ABOVE THE TAILWIND IMPORTS — DO NOT DELETE THIS COMMENT */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
+
+/* CRITICAL: THE FOLLOWING TAILWIND IMPORTS MUST NEVER BE DELETED OR REORDERED — DO NOT DELETE THIS COMMENT */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+/* END TAILWIND IMPORTS — ALL OTHER CSS MUST GO BELOW THIS LINE */
+
+:root {
+  --canvas: 246 247 249;
+  --surface: 255 255 255;
+  --subtle: 240 242 245;
+  --ink: 16 24 40;
+  --ink-soft: 52 64 84;
+  --muted: 102 112 133;
+  --line: 228 231 236;
+  --line-strong: 208 213 221;
+  --accent: 13 110 102;
+  --accent-strong: 9 87 81;
+  --accent-soft: 229 243 241;
+  --accent-ink: 255 255 255;
+  --success: 6 118 71;
+  --success-soft: 230 246 237;
+  --warning: 165 79 8;
+  --warning-soft: 254 244 229;
+  --danger: 180 24 56;
+  --danger-soft: 253 236 239;
+  --info: 23 92 211;
+  --info-soft: 235 242 254;
+}
+
+[data-theme="dark"],
+.dark {
+  --canvas: 15 23 42;
+  --surface: 30 41 59;
+  --subtle: 51 65 85;
+  --ink: 248 250 252;
+  --ink-soft: 203 213 225;
+  --muted: 148 163 184;
+  --line: 51 65 85;
+  --line-strong: 71 85 105;
+  --accent: 20 184 166;
+  --accent-strong: 45 212 191;
+  --accent-soft: 19 78 74;
+  --accent-ink: 15 23 42;
+  --success: 52 211 153;
+  --success-soft: 6 78 59;
+  --warning: 251 146 60;
+  --warning-soft: 124 45 18;
+  --danger: 248 113 113;
+  --danger-soft: 127 29 29;
+  --info: 96 165 250;
+  --info-soft: 30 58 138;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  background: rgb(var(--canvas));
+  color: rgb(var(--ink));
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Density tuning */
+[data-density="compact"] input,
+[data-density="compact"] select,
+[data-density="compact"] textarea {
+  padding-top: 0.35rem;
+  padding-bottom: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+[data-density="compact"] table th,
+[data-density="compact"] table td {
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+  font-size: 0.8125rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
