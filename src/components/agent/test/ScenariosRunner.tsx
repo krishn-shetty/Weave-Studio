@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '../../ui/Toast';
 import {
   CheckCircle2Icon,
   ChevronRightIcon,

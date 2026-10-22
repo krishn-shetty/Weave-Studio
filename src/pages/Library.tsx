@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '../components/ui/Toast';
 import {
   CheckIcon,
   CopyIcon,

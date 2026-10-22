@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { toast } from 'sonner';
+import { toast } from '../../ui/Toast';
 import { CircleCheckIcon, LoaderCircleIcon, ShieldAlertIcon, TriangleAlertIcon } from 'lucide-react';
 import type { Agent, EnvironmentName } from '../../../types/studio';
 import { useStudio } from '../../../contexts/StudioContext';

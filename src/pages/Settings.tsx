@@ -6,6 +6,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
 import { StatusChip } from '../components/ui/StatusChip';
+import { ToastShowcase } from '../components/ui/Toast';
 
 const roleText = {
   admin: 'Can edit, publish and deploy anywhere, including Production.',
@@ -82,6 +83,11 @@ export function Settings() {
             <Toggle checked={technicalNames} onChange={setTechnicalNames} label="Technical names" />
           </div>
         </div>
+      </section>
+
+      <section aria-labelledby="notifications-preview" className="mt-8 border-b border-line pb-8">
+        <h2 id="notifications-preview" className="text-sm font-semibold text-ink mb-4">Notifications & Alerts</h2>
+        <ToastShowcase />
       </section>
 
       <section aria-labelledby="security" className="mt-8">

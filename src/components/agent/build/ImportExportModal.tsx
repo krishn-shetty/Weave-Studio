@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from '../../ui/Toast';
 import { AlertTriangleIcon, CheckCircle2Icon, DownloadIcon, FileJsonIcon, UploadIcon, XCircleIcon } from 'lucide-react';
 import type { Agent, AgentConfig } from '../../../types/studio';
 import { useStudio } from '../../../contexts/StudioContext';

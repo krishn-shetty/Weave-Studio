@@ -1,5 +1,5 @@
 import React from 'react';
-import { toast } from 'sonner';
+import { toast } from './Toast';
 import { AlertTriangleIcon, CheckCircle2Icon, LoaderCircleIcon, LockIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { Dialog } from './Dialog';

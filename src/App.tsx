@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { ToastProvider } from './components/ui/Toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { StudioProvider } from './contexts/StudioContext';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -28,23 +28,24 @@ export function App({ role = 'admin', simulateConflict = false, testBackend = 's
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider assignedRole={role}>
           <StudioProvider simulateConflict={simulateConflict} testBackend={testBackend}>
-            <ErrorBoundary fallbackTitle="An application error occurred">
-              <Routes>
-                <Route path="/signin" element={<SignIn />} />
-                <Route element={<AppShell />}>
-                  <Route index element={<Home />} />
-                  <Route path="agents" element={<Agents />} />
-                  <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
-                  <Route path="knowledge" element={<Knowledge />} />
-                  <Route path="calls" element={<Calls />} />
-                  <Route path="calls/:callId" element={<CallDetail />} />
-                  <Route path="library" element={<Library />} />
-                  <Route path="settings" element={<Settings />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Route>
-              </Routes>
-            </ErrorBoundary>
-            <Toaster position="bottom-right" toastOptions={{ style: { fontFamily: '"IBM Plex Sans", sans-serif' } }} />
+            <ToastProvider position="top-right">
+              <ErrorBoundary fallbackTitle="An application error occurred">
+                <Routes>
+                  <Route path="/signin" element={<SignIn />} />
+                  <Route element={<AppShell />}>
+                    <Route index element={<Home />} />
+                    <Route path="agents" element={<Agents />} />
+                    <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
+                    <Route path="knowledge" element={<Knowledge />} />
+                    <Route path="calls" element={<Calls />} />
+                    <Route path="calls/:callId" element={<CallDetail />} />
+                    <Route path="library" element={<Library />} />
+                    <Route path="settings" element={<Settings />} />
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Route>
+                </Routes>
+              </ErrorBoundary>
+            </ToastProvider>
           </StudioProvider>
         </AuthProvider>
       </BrowserRouter>

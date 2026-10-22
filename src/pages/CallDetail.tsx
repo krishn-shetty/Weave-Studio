@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ChevronRightIcon, DownloadIcon, FlaskConicalIcon, RefreshCwIcon, SparklesIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '../components/ui/Toast';
 import { useStudio } from '../contexts/StudioContext';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Button } from '../components/ui/Button';

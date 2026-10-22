@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from '../ui/Toast';
 import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, TriangleAlertIcon } from 'lucide-react';
 import type { Path, VersionBump } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';

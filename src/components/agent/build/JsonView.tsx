@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CircleAlertIcon, CircleCheckIcon, CopyIcon, WandSparklesIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { toast } from '../../ui/Toast';
 import type { AgentConfig } from '../../../types/studio';
 import type { DraftEditor } from '../../../hooks/useDraftEditor';
 import { Button } from '../../ui/Button';

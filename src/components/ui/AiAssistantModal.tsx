@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { toast } from 'sonner';
+import { toast } from './Toast';
 import { BotIcon, CheckIcon, CornerDownLeftIcon, SparklesIcon, UndoIcon, Wand2Icon } from 'lucide-react';
 import type { AgentConfig, Issue } from '../../types/studio';
 import { Dialog } from './Dialog';

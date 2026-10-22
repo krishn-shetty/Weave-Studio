@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from '../ui/Toast';
 import { DownloadIcon, LoaderCircleIcon, RotateCcwIcon, TriangleAlertIcon } from 'lucide-react';
 import type { EnvironmentName, Version } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';

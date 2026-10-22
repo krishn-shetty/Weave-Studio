@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { toast } from 'sonner';
+import { toast } from './Toast';
 import { MessageSquarePlusIcon, SendIcon, ShieldCheckIcon } from 'lucide-react';
 import { Dialog } from './Dialog';
 import { Button } from './Button';
