@@ -14,7 +14,7 @@ import type {
 } from '../types/studio';
 import { starters } from '../data/starters';
 import { useAuth } from './AuthContext';
-import { buildConfig } from '../utils/configFactory';
+import { buildConfig, normalizeConfig } from '../utils/configFactory';
 import { validateConfig } from '../utils/validate';
 import { bumpVersion, randomHex } from '../utils/format';
 import { currentDeployments } from '../utils/agentStatus';
@@ -212,7 +212,7 @@ export function StudioProvider({
           revision: draftRes.value.revision,
           saved_at: draftRes.value.saved_at,
           saved_by: draftRes.value.saved_by || 'Unknown',
-          config: draftRes.value.config as AgentConfig,
+          config: normalizeConfig(draftRes.value.config as AgentConfig),
         };
       } else {
         draft = {
@@ -220,28 +220,12 @@ export function StudioProvider({
           revision: summary.draft_revision || 1,
           saved_at: summary.draft_saved_at || new Date().toISOString(),
           saved_by: 'Server',
-          config: {
-            meta: { id: summary.id, name: summary.name, version: summary.latest_version || '0.1.0', description: '' },
-            persona: { name: summary.name, company: 'Organization', tone: 'warm', rules: '', recording_notice: true },
-            defaults: {
-              language: 'en',
-              models: {
-                llm: { provider: 'openai', model: 'gpt-5.4' },
-                stt: { provider: 'openai', model: 'gpt-realtime-whisper' },
-                tts: { provider: 'elevenlabs', voice: '21m00Tcm4TlvDq8ikWAM' },
-              },
-              conversation: { inactivity_timeout_s: 30, allow_interruptions: true },
-            },
-            channels: [{ id: 'web-voice', type: 'web_voice', enabled: true, greeting: `Hello, this is ${summary.name}.` }],
-            agents: {
-              entry: 'main',
-              items: [{ id: 'main', name: summary.name, instructions: 'Assist callers promptly.', tools: [], handoffs: [] }],
-            },
-            tools: [],
-            post_call: { summary: true, recording: true, redact_pii: false },
-            observability: { retention_days: 90, store_transcripts: true },
-            runtime: { mode: 'plugins', timezone: 'UTC' },
-          },
+          config: buildConfig({
+            id: summary.id,
+            name: summary.name,
+            company: 'Organization',
+            starter: starters[0],
+          }),
         };
       }
 
@@ -252,7 +236,7 @@ export function StudioProvider({
               published_at: v.published_at,
               published_by: v.published_by || 'Server',
               checksum: v.checksum || '',
-              config: v.config || draft.config,
+              config: normalizeConfig(v.config || draft.config),
             }))
           : [];
 

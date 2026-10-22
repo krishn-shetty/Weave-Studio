@@ -12,7 +12,7 @@ import { Segmented } from '../../ui/Segmented';
 import { StatusChip } from '../../ui/StatusChip';
 import { languages, llmProviders, ttsProviders } from '../../../data/providers';
 import { fieldId } from '../../../utils/path';
-import { getInstructionsText, issuesAt } from '../../../utils/validate';
+import { getInstructionsText, getLanguageCode, issuesAt } from '../../../utils/validate';
 import { missingProviderKey } from '../../../utils/settingOptions';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
@@ -35,22 +35,29 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
   const err = (p: Path) => issuesAt(validation.errors, p)[0]?.message;
   const warn = (p: Path) => issuesAt(validation.warnings, p)[0]?.message;
 
-  const entryIndex = Math.max(0, config.agents.items.findIndex((a) => a.id === config.agents.entry));
-  const entry = config.agents.items[entryIndex];
+  const entryIndex = Math.max(0, (config.agents?.items ?? []).findIndex((a) => a.id === config.agents?.entry));
+  const entry = config.agents?.items?.[entryIndex];
   const toolsPath: Path = ['agents', 'items', entryIndex, 'tools'];
   const declared = config.tools ?? [];
   const undeclared = (entry?.tools ?? []).filter((t) => !declared.some((d) => d.id === t));
 
-  const llmProvider = llmProviders.find((p) => p.id === config.defaults.models.llm.provider);
-  const ttsProvider = ttsProviders.find((p) => p.id === config.defaults.models.tts.provider);
-  const llmMissing = missingProviderKey('defaults.models.llm.provider', config.defaults.models.llm.provider);
-  const ttsMissing = missingProviderKey('defaults.models.tts.provider', config.defaults.models.tts.provider);
+  const llmProvider = llmProviders.find((p) => p.id === config.defaults?.models?.llm?.provider);
+  const ttsProvider = ttsProviders.find((p) => p.id === config.defaults?.models?.tts?.provider);
+  const llmMissing = missingProviderKey('defaults.models.llm.provider', config.defaults?.models?.llm?.provider ?? '');
+  const ttsMissing = missingProviderKey('defaults.models.tts.provider', config.defaults?.models?.tts?.provider ?? '');
 
   const setProvider = (kind: 'llm' | 'tts', id: string) => {
     const list = kind === 'llm' ? llmProviders : ttsProviders;
     update(['defaults', 'models', kind, 'provider'], id);
     const first = list.find((p) => p.id === id)?.models[0]?.id;
-    if (first) update(['defaults', 'models', kind, kind === 'llm' ? 'model' : 'voice'], first);
+    if (first) {
+      if (kind === 'llm') {
+        update(['defaults', 'models', kind, 'model'], first);
+      } else {
+        update(['defaults', 'models', kind, 'voice'], first);
+        update(['defaults', 'models', kind, 'voice_id'], first);
+      }
+    }
   };
 
   return (
@@ -58,14 +65,14 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
       <GuidedSection id="g-personality" title="Personality and instructions" description="Who the agent is and what it should do. This shapes every reply." onMore={() => onMore('about')}>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id={fieldId('persona.company')} label="Company name" error={err(['persona', 'company'])}>
-            <input id={`${fieldId('persona.company')}-input`} className={cn(inputClass, err(['persona', 'company']) && inputErrorClass)} value={config.persona.company} disabled={disabled} onChange={(e) => update(['persona', 'company'], e.target.value)} />
+            <input id={`${fieldId('persona.company')}-input`} className={cn(inputClass, err(['persona', 'company']) && inputErrorClass)} value={config.persona?.company ?? ''} disabled={disabled} onChange={(e) => update(['persona', 'company'], e.target.value)} />
           </Field>
           <Field id={fieldId('persona.name')} label="Agent’s spoken name" help="What it calls itself.">
-            <input id={`${fieldId('persona.name')}-input`} className={inputClass} value={config.persona.name} disabled={disabled} onChange={(e) => update(['persona', 'name'], e.target.value)} />
+            <input id={`${fieldId('persona.name')}-input`} className={inputClass} value={config.persona?.name ?? ''} disabled={disabled} onChange={(e) => update(['persona', 'name'], e.target.value)} />
           </Field>
         </div>
         <Field id={fieldId('persona.tone')} label="Tone">
-          <Segmented label="Tone" options={tones} value={config.persona.tone} onChange={(v) => !disabled && update(['persona', 'tone'], v)} />
+          <Segmented label="Tone" options={tones} value={config.persona?.tone ?? 'neutral'} onChange={(v) => !disabled && update(['persona', 'tone'], v)} />
         </Field>
         {entry &&
         <Field
@@ -96,12 +103,54 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
 
       <GuidedSection id="g-voice" title="Voice and language" description="What callers hear on web voice and phone." onMore={() => onMore('talks')}>
         <Field id={fieldId('defaults.language')} label="Language">
-          <select id={`${fieldId('defaults.language')}-input`} className={cn(inputClass, 'max-w-xs')} value={config.defaults.language} disabled={disabled} onChange={(e) => update(['defaults', 'language'], e.target.value)}>
-            {!languages.some((l) => l.id === config.defaults?.language) && config.defaults?.language && (
-              <option key={`lang-${config.defaults.language}`} value={config.defaults.language}>{config.defaults.language}</option>
-            )}
-            {languages.map((l) => <option key={`lang-${l.id}`} value={l.id}>{l.label}</option>)}
-          </select>
+          {(() => {
+            const currentLang = getLanguageCode(config.defaults?.language);
+            const isKnown = languages.some((l) => l.id === currentLang);
+            const langObj = typeof config.defaults?.language === 'object' && config.defaults?.language !== null ? config.defaults.language : null;
+            return (
+              <>
+                <select
+                  id={`${fieldId('defaults.language')}-input`}
+                  className={cn(inputClass, 'max-w-xs')}
+                  value={currentLang}
+                  disabled={disabled}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (langObj) {
+                      update(['defaults', 'language'], { ...langObj, primary: val });
+                    } else {
+                      update(['defaults', 'language'], val);
+                    }
+                  }}
+                >
+                  {!isKnown && currentLang && (
+                    <option key={`lang-${currentLang}`} value={currentLang}>
+                      {currentLang}
+                    </option>
+                  )}
+                  {languages.map((l) => (
+                    <option key={`lang-${l.id}`} value={l.id}>
+                      {l.label}
+                    </option>
+                  ))}
+                </select>
+                {langObj && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    {Array.isArray(langObj.speaks) && langObj.speaks.length > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 border border-line">
+                        Also speaks: <strong className="font-medium text-ink">{langObj.speaks.join(', ')}</strong>
+                      </span>
+                    )}
+                    {langObj.auto_detect && (
+                      <span className="inline-flex items-center rounded bg-accent/10 px-2 py-0.5 font-medium text-accent">
+                        Auto-detect enabled
+                      </span>
+                    )}
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </Field>
         <Field
           id={fieldId('defaults.models.tts.voice')}
@@ -111,11 +160,11 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[13px] text-muted">Provider</span>
-            <Segmented size="sm" label="Voice provider" options={ttsProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults.models.tts.provider} onChange={(v) => !disabled && setProvider('tts', v)} />
+            <Segmented size="sm" label="Voice provider" options={ttsProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults?.models?.tts?.provider ?? ''} onChange={(v) => !disabled && setProvider('tts', v)} />
           </div>
           <div role="radiogroup" aria-label="Voice" className="grid gap-2 sm:grid-cols-3">
             {(ttsProvider?.models ?? []).map((v, i) => {
-              const active = config.defaults.models.tts.voice === v.id;
+              const active = (config.defaults?.models?.tts?.voice_id ?? config.defaults?.models?.tts?.voice) === v.id;
               return (
                 <button
                   key={v.id}
@@ -124,7 +173,10 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
                   aria-checked={active}
                   disabled={disabled}
                   id={i === 0 ? `${fieldId('defaults.models.tts.voice')}-input` : undefined}
-                  onClick={() => update(['defaults', 'models', 'tts', 'voice'], v.id)}
+                  onClick={() => {
+                    update(['defaults', 'models', 'tts', 'voice_id'], v.id);
+                    update(['defaults', 'models', 'tts', 'voice'], v.id);
+                  }}
                   className={cn(
                     'rounded-lg border px-3 py-2.5 text-left transition-[border-color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                     active ? 'border-accent bg-accent-soft/60 ring-1 ring-accent' : 'border-line hover:border-line-strong'
@@ -149,11 +201,11 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[13px] text-muted">Provider</span>
-            <Segmented size="sm" label="Model provider" options={llmProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults.models.llm.provider} onChange={(v) => !disabled && setProvider('llm', v)} />
+            <Segmented size="sm" label="Model provider" options={llmProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults?.models?.llm?.provider ?? ''} onChange={(v) => !disabled && setProvider('llm', v)} />
           </div>
           <div role="radiogroup" aria-label="Model" className="divide-y divide-line rounded-lg border border-line">
             {(llmProvider?.models ?? []).map((m, i) => {
-              const active = config.defaults.models.llm.model === m.id;
+              const active = config.defaults?.models?.llm?.model === m.id;
               return (
                 <button
                   key={m.id}
@@ -234,9 +286,49 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
       <GuidedSection id="g-records" title="Call records" description="What’s kept after each conversation. Transcripts may contain personal data." onMore={() => onMore('after')}>
         <div className="space-y-4">
           {[
-          { path: ['observability', 'store_transcripts'] as Path, label: 'Keep transcripts', help: 'Needed to review calls in Studio.', value: config.observability.store_transcripts },
-          { path: ['post_call', 'recording'] as Path, label: 'Record audio', help: 'Keeps audio of phone and voice calls.', value: config.post_call.recording },
-          { path: ['persona', 'recording_notice'] as Path, label: 'Tell callers they may be recorded', help: 'Required in many regions when recording.', value: config.persona.recording_notice }].
+          {
+            path: ['observability', 'store_transcripts'] as Path,
+            label: 'Keep transcripts',
+            help: 'Needed to review calls in Studio.',
+            value: config.observability?.store_transcripts ?? true,
+            onChange: (v: boolean) => update(['observability', 'store_transcripts'], v),
+          },
+          {
+            path: ['post_call', 'recording'] as Path,
+            label: 'Record audio',
+            help: 'Keeps audio of phone and voice calls.',
+            value: typeof config.post_call?.recording === 'object'
+              ? Boolean(config.post_call.recording.audio)
+              : Boolean(config.post_call?.recording),
+            onChange: (v: boolean) => {
+              if (typeof config.post_call?.recording === 'object') {
+                update(['post_call', 'recording'], { ...config.post_call.recording, audio: v });
+              } else {
+                update(['post_call', 'recording'], { audio: v, transcript: true });
+              }
+            },
+          },
+          {
+            path: ['persona', 'recording_notice'] as Path,
+            label: 'Tell callers they may be recorded',
+            help: 'Required in many regions when recording.',
+            value: Boolean(config.persona?.disclosures?.recording_notice ?? config.persona?.recording_notice),
+            onChange: (v: boolean) => {
+              update(['persona', 'recording_notice'], v);
+              if (v) {
+                update(['persona', 'disclosures'], {
+                  ...(config.persona?.disclosures || {}),
+                  recording_notice: typeof config.persona?.disclosures?.recording_notice === 'string'
+                    ? config.persona.disclosures.recording_notice
+                    : 'This call may be recorded.',
+                });
+              } else {
+                const disc = { ...(config.persona?.disclosures || {}) };
+                delete disc.recording_notice;
+                update(['persona', 'disclosures'], disc);
+              }
+            },
+          }].
           map((row) =>
           <div key={row.path.join('.')} id={fieldId(row.path)} className="flex scroll-mt-28 items-start justify-between gap-6 rounded-md transition-[box-shadow] duration-200">
               <div>
@@ -244,18 +336,24 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
                 <p className="mt-0.5 text-[13px] text-muted">{row.help}</p>
                 {warn(row.path) && <p className="mt-1 text-[13px] text-warning">{warn(row.path)}</p>}
               </div>
-              <Toggle id={`${fieldId(row.path)}-input`} checked={row.value} label={row.label} disabled={disabled} onChange={(v) => update(row.path, v)} />
+              <Toggle id={`${fieldId(row.path)}-input`} checked={Boolean(row.value)} label={row.label} disabled={disabled} onChange={row.onChange} />
             </div>
           )}
           <Field id={fieldId('observability.retention_days')} label="Keep records for" warning={warn(['observability', 'retention_days'])}>
             <select
               id={`${fieldId('observability.retention_days')}-input`}
               className={cn(inputClass, 'max-w-xs')}
-              value={config.observability?.retention_days ?? 90}
+              value={config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90}
               disabled={disabled}
-              onChange={(e) => update(['observability', 'retention_days'], Number(e.target.value))}>
+              onChange={(e) => {
+                const days = Number(e.target.value);
+                update(['observability', 'retention_days'], days);
+                if (config.observability?.session_log) {
+                  update(['observability', 'session_log'], { ...config.observability.session_log, retention_days: days });
+                }
+              }}>
               
-              {Array.from(new Set([7, 30, 90, 365, config.observability?.retention_days ?? 90]))
+              {Array.from(new Set([7, 30, 90, 365, config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90]))
                 .filter((d): d is number => typeof d === 'number' && !isNaN(d))
                 .sort((a, b) => a - b)
                 .map((d) => (

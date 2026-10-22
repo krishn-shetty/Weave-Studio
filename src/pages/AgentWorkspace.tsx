@@ -10,6 +10,7 @@ import { MonitorStage } from '../components/agent/MonitorStage';
 import { NextStepBar } from '../components/agent/NextStepBar';
 import { ConflictDialog } from '../components/agent/ConflictDialog';
 import { PublishDialog } from '../components/agent/PublishDialog';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 
 const stageIds: StageId[] = ['build', 'test', 'release', 'monitor'];
 
@@ -50,10 +51,12 @@ export function AgentWorkspace() {
     <div className="flex min-h-screen flex-col">
       <AgentHeader editor={editor} onPublish={openPublish} />
       <div className="flex-1">
-        {stage === 'build' && <BuildStage editor={editor} focusRequest={focusRequest} />}
-        {stage === 'test' && <TestStage editor={editor} onGoToField={goToField} />}
-        {stage === 'release' && <ReleaseStage editor={editor} onPublish={openPublish} />}
-        {stage === 'monitor' && <MonitorStage editor={editor} />}
+        <ErrorBoundary fallbackTitle="An error occurred in this workspace stage">
+          {stage === 'build' && <BuildStage editor={editor} focusRequest={focusRequest} />}
+          {stage === 'test' && <TestStage editor={editor} onGoToField={goToField} />}
+          {stage === 'release' && <ReleaseStage editor={editor} onPublish={openPublish} />}
+          {stage === 'monitor' && <MonitorStage editor={editor} />}
+        </ErrorBoundary>
       </div>
       <NextStepBar stage={stage} agentId={agentId} onPublish={openPublish} />
       <ConflictDialog editor={editor} />

@@ -30,6 +30,17 @@ export function getInstructionsText(instructions: unknown): string {
   return '';
 }
 
+export function getLanguageCode(language: unknown): string {
+  if (typeof language === 'string') return language;
+  if (language && typeof language === 'object') {
+    const l = language as Record<string, unknown>;
+    if (typeof l.primary === 'string') return l.primary;
+    if (typeof l.code === 'string') return l.code;
+    if (typeof l.id === 'string') return l.id;
+  }
+  return 'en';
+}
+
 export function validateConfig(config: AgentConfig): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
@@ -110,10 +121,16 @@ export function validateConfig(config: AgentConfig): ValidationReport {
     }
   }
 
-  if (config?.post_call?.recording && !config?.persona?.recording_notice) {
+  const isRecording = typeof config?.post_call?.recording === 'object'
+    ? Boolean(config.post_call.recording.audio)
+    : Boolean(config?.post_call?.recording);
+  const hasRecordingNotice = Boolean(config?.persona?.disclosures?.recording_notice ?? config?.persona?.recording_notice);
+
+  if (isRecording && !hasRecordingNotice) {
     warnings.push({ path: ['persona', 'recording_notice'], message: 'Calls are recorded but callers are not told. Many regions require a recording notice.' });
   }
-  if ((config?.observability?.retention_days ?? 0) > 365) {
+  const retentionDays = config?.observability?.session_log?.retention_days ?? config?.observability?.retention_days ?? 0;
+  if (retentionDays > 365) {
     warnings.push({ path: ['observability', 'retention_days'], message: 'Records are kept for more than a year. Check this matches your retention policy.' });
   }
 

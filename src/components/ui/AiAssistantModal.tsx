@@ -46,7 +46,11 @@ export function AiAssistantModal({ open, onClose, context }: AiAssistantModalPro
       } else if (context.error?.message.includes('recording')) {
         patched.persona.recording_notice = true;
       } else if (context.error?.message.includes('timeout')) {
-        patched.defaults.conversation.inactivity_timeout_s = 45;
+        if (patched.defaults.conversation) {
+          patched.defaults.conversation.inactivity_timeout_s = 45;
+        } else {
+          patched.defaults.conversation = { inactivity_timeout_s: 45, allow_interruptions: true };
+        }
       } else {
         patched.persona.rules = `${patched.persona.rules} Always verify caller identity before answering account inquiries.`.trim();
       }

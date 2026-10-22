@@ -4,7 +4,7 @@ import type { SettingDef } from '../../../data/settingsCatalog';
 import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { fieldId, getAt, parsePath } from '../../../utils/path';
-import { issuesAt } from '../../../utils/validate';
+import { getLanguageCode, issuesAt } from '../../../utils/validate';
 import { missingProviderKey, providerFollowUps, resolveOptions } from '../../../utils/settingOptions';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
@@ -20,7 +20,21 @@ interface SettingFieldProps {
 
 export function SettingField({ def, config, errors, warnings, technical, disabled, update }: SettingFieldProps) {
   const path = parsePath(def.path);
-  const value = getAt(config, path);
+  let value = getAt(config, path);
+  if (def.path === 'post_call.recording' && typeof value === 'object' && value !== null) {
+    value = (value as any).audio;
+  } else if (def.path === 'post_call.summary' && typeof value === 'object' && value !== null) {
+    value = (value as any).enabled;
+  } else if (def.path === 'persona.recording_notice') {
+    value = Boolean(config.persona?.disclosures?.recording_notice ?? config.persona?.recording_notice);
+  } else if (def.path === 'defaults.models.tts.voice') {
+    value = config.defaults?.models?.tts?.voice ?? config.defaults?.models?.tts?.voice_id;
+  } else if (def.path === 'observability.retention_days') {
+    value = config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90;
+  } else if (def.path === 'runtime.mode') {
+    value = config.runtime?.provider_mode ?? config.runtime?.mode ?? 'plugins';
+  }
+
   const id = fieldId(def.path);
   const inputId = `${id}-input`;
   const error = issuesAt(errors, def.path)[0]?.message;
@@ -30,10 +44,51 @@ export function SettingField({ def, config, errors, warnings, technical, disable
 
   const onChange = (v: unknown) => {
     update(path, v);
+    if (def.path === 'defaults.models.tts.voice') {
+      update(['defaults', 'models', 'tts', 'voice_id'], v);
+    } else if (def.path === 'post_call.recording') {
+      if (typeof config.post_call?.recording === 'object') {
+        update(['post_call', 'recording'], { ...config.post_call.recording, audio: Boolean(v) });
+      } else {
+        update(['post_call', 'recording'], { audio: Boolean(v), transcript: true });
+      }
+    } else if (def.path === 'post_call.summary') {
+      if (typeof config.post_call?.summary === 'object') {
+        update(['post_call', 'summary'], { ...config.post_call.summary, enabled: Boolean(v) });
+      } else {
+        update(['post_call', 'summary'], { enabled: Boolean(v) });
+      }
+    } else if (def.path === 'persona.recording_notice') {
+      if (v) {
+        update(['persona', 'disclosures'], {
+          ...(config.persona?.disclosures || {}),
+          recording_notice:
+            typeof config.persona?.disclosures?.recording_notice === 'string'
+              ? config.persona.disclosures.recording_notice
+              : 'This call may be recorded.',
+        });
+      } else {
+        const disc = { ...(config.persona?.disclosures || {}) };
+        delete disc.recording_notice;
+        update(['persona', 'disclosures'], disc);
+      }
+    } else if (def.path === 'observability.retention_days') {
+      if (config.observability?.session_log) {
+        update(['observability', 'session_log'], { ...config.observability.session_log, retention_days: Number(v) });
+      }
+    } else if (def.path === 'runtime.mode') {
+      update(['runtime', 'provider_mode'], v);
+    }
+
     const follow = providerFollowUps[def.path];
     if (follow) {
       const first = follow.list.find((p) => p.id === v)?.models[0]?.id;
-      if (first) update(parsePath(follow.sibling), first);
+      if (first) {
+        update(parsePath(follow.sibling), first);
+        if (follow.sibling === 'defaults.models.tts.voice') {
+          update(['defaults', 'models', 'tts', 'voice_id'], first);
+        }
+      }
     }
   };
 
@@ -72,14 +127,28 @@ export function SettingField({ def, config, errors, warnings, technical, disable
 
   } else if (def.type === 'select') {
     const options = resolveOptions(def, config);
-    const known = options.some((o) => o.value === value);
-    control =
-    <select id={inputId} className={cls} value={String(value ?? '')} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
-        {!known && <option value={String(value ?? '')}>{String(value ?? '')} (not supported)</option>}
-        {options.map((o) =>
-      <option key={o.value} value={o.value}>{o.label}</option>
-      )}
-      </select>;
+    const selectedVal = def.path === 'defaults.language' ? getLanguageCode(value) : String(value ?? '');
+    const known = options.some((o) => o.value === selectedVal);
+    control = (
+      <select
+        id={inputId}
+        className={cls}
+        value={selectedVal}
+        disabled={disabled}
+        onChange={(e) => {
+          if (def.path === 'defaults.language' && typeof value === 'object' && value !== null) {
+            onChange({ ...value, primary: e.target.value });
+          } else {
+            onChange(e.target.value);
+          }
+        }}
+      >
+        {!known && <option value={selectedVal}>{selectedVal} (not supported)</option>}
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    );
 
   } else {
     control = <input id={inputId} type="text" className={cn(cls, technical && def.level === 'expert' && 'font-mono')} value={String(value ?? '')} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;

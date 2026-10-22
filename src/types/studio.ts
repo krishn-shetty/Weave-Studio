@@ -34,24 +34,77 @@ export interface ChannelDefinition {
   modalities?: any;
 }
 
+export interface LanguageConfig {
+  primary: string;
+  speaks?: string[];
+  also_understands?: string[];
+  auto_detect?: boolean;
+  [key: string]: any;
+}
+
 export interface AgentConfig {
-  meta: {id: string;name: string;version: string;description: string;};
-  persona: {name: string;company: string;tone: Tone;rules: string;recording_notice: boolean;};
+  schema_version?: string;
+  meta: {
+    id: string;
+    name: string;
+    version: string;
+    status?: 'draft' | 'published' | 'archived';
+    description?: string;
+    [key: string]: any;
+  };
+  persona: {
+    name: string;
+    company?: string;
+    tone?: Tone | string;
+    rules?: string;
+    recording_notice?: boolean;
+    style_rules?: string[];
+    shared_rules?: string[];
+    disclosures?: { recording_notice?: string; [key: string]: any };
+    [key: string]: any;
+  };
   defaults: {
-    language: string;
+    language?: string | LanguageConfig;
     models: {
-      llm: {provider: string;model: string;};
-      stt: {provider: string;model: string;};
-      tts: {provider: string;voice: string;};
+      llm: { provider: string; model: string; [key: string]: any };
+      stt?: { provider: string; model: string; [key: string]: any };
+      tts?: { provider: string; voice?: string; voice_id?: string; model?: string; [key: string]: any };
+      [key: string]: any;
     };
-    conversation: {inactivity_timeout_s: number;allow_interruptions: boolean;};
+    conversation?: {
+      inactivity_timeout_s?: number;
+      allow_interruptions?: boolean;
+      inactivity?: any;
+      turn_handling?: any;
+      [key: string]: any;
+    };
+    [key: string]: any;
   };
   channels: ChannelDefinition[];
-  agents: {entry: string;items: AgentRole[];};
+  agents: { entry: string; items: AgentRole[]; [key: string]: any };
   tools: ToolDefinition[];
-  post_call: {summary: boolean;recording: boolean;redact_pii: boolean;};
-  observability: {retention_days: number;store_transcripts: boolean;};
-  runtime: {mode: 'plugins' | 'inference';timezone: string;};
+  post_call?: {
+    summary?: boolean | { enabled: boolean; prompt?: string; [key: string]: any };
+    recording?: boolean | { audio?: boolean; transcript?: boolean; retention_days?: number; [key: string]: any };
+    redact_pii?: boolean;
+    redaction?: { enabled?: boolean; entities?: string[]; patterns?: string[]; [key: string]: any };
+    artifacts?: any[];
+    [key: string]: any;
+  };
+  observability?: {
+    retention_days?: number;
+    store_transcripts?: boolean;
+    session_log?: { enabled?: boolean; directory?: string; detail?: string; retention_days?: number; [key: string]: any };
+    [key: string]: any;
+  };
+  runtime?: {
+    engine?: string;
+    provider_mode?: 'plugins' | 'inference';
+    mode?: 'plugins' | 'inference';
+    timezone?: string;
+    [key: string]: any;
+  };
+  [key: string]: any;
 }
 
 export interface Issue {

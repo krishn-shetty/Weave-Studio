@@ -14,6 +14,7 @@ import { Calls } from './pages/Calls';
 import { CallDetail } from './pages/CallDetail';
 import { Library } from './pages/Library';
 import { Settings } from './pages/Settings';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 interface AppProps {
   role?: 'admin' | 'editor' | 'viewer';
@@ -27,20 +28,22 @@ export function App({ role = 'admin', simulateConflict = false, testBackend = 's
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider assignedRole={role}>
           <StudioProvider simulateConflict={simulateConflict} testBackend={testBackend}>
-            <Routes>
-              <Route path="/signin" element={<SignIn />} />
-              <Route element={<AppShell />}>
-                <Route index element={<Home />} />
-                <Route path="agents" element={<Agents />} />
-                <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
-                <Route path="knowledge" element={<Knowledge />} />
-                <Route path="calls" element={<Calls />} />
-                <Route path="calls/:callId" element={<CallDetail />} />
-                <Route path="library" element={<Library />} />
-                <Route path="settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Route>
-            </Routes>
+            <ErrorBoundary fallbackTitle="An application error occurred">
+              <Routes>
+                <Route path="/signin" element={<SignIn />} />
+                <Route element={<AppShell />}>
+                  <Route index element={<Home />} />
+                  <Route path="agents" element={<Agents />} />
+                  <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
+                  <Route path="knowledge" element={<Knowledge />} />
+                  <Route path="calls" element={<Calls />} />
+                  <Route path="calls/:callId" element={<CallDetail />} />
+                  <Route path="library" element={<Library />} />
+                  <Route path="settings" element={<Settings />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Route>
+              </Routes>
+            </ErrorBoundary>
             <Toaster position="bottom-right" toastOptions={{ style: { fontFamily: '"IBM Plex Sans", sans-serif' } }} />
           </StudioProvider>
         </AuthProvider>

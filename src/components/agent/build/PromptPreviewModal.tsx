@@ -30,16 +30,17 @@ interface PromptPreviewModalProps {
 
 export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModalProps) {
   const [channel, setChannel] = useState<ChannelType>('web_chat');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(config.agents.entry);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(config.agents?.entry ?? '');
   const [verifiedCaller, setVerifiedCaller] = useState(false);
   const [isAfterHours, setIsAfterHours] = useState(false);
 
   const activeAgent = useMemo(() => {
+    const items = config.agents?.items ?? [];
     return (
-      config.agents.items.find((a) => a.id === selectedAgentId) ??
-      config.agents.items[0]
+      items.find((a) => a.id === selectedAgentId) ??
+      items[0]
     );
-  }, [config.agents.items, selectedAgentId]);
+  }, [config.agents?.items, selectedAgentId]);
 
   const activeTools = useMemo(() => {
     const ids = activeAgent?.tools ?? [];
@@ -162,7 +163,7 @@ export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModal
               />
             </div>
 
-            {config.agents.items.length > 1 && (
+            {(config.agents?.items ?? []).length > 1 && (
               <div>
                 <span className="block text-xs font-medium text-muted">Agent Role</span>
                 <select
@@ -170,7 +171,7 @@ export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModal
                   onChange={(e) => setSelectedAgentId(e.target.value)}
                   className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink"
                 >
-                  {config.agents.items.map((a) => (
+                  {(config.agents?.items ?? []).map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.id})
                     </option>

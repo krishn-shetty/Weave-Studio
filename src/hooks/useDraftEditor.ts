@@ -3,6 +3,7 @@ import type { AgentConfig, Draft, Path, ValidationReport } from '../types/studio
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { validateConfig } from '../utils/validate';
+import { normalizeConfig } from '../utils/configFactory';
 import { setAt } from '../utils/path';
 
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'conflict';
@@ -13,7 +14,7 @@ export function useDraftEditor(agentId: string) {
   const agent = getAgent(agentId);
   const canEdit = can('edit');
 
-  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ?? null);
+  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ? normalizeConfig(agent.draft.config) : null);
   const [baseRevision, setBaseRevision] = useState(agent?.draft.revision ?? 0);
   const [savedAt, setSavedAt] = useState(agent?.draft.saved_at ?? '');
   const [status, setStatus] = useState<SaveStatus>('saved');
@@ -32,7 +33,7 @@ export function useDraftEditor(agentId: string) {
   useEffect(() => {
     const a = getAgent(agentId);
     if (!a) return;
-    setConfig(a.draft.config);
+    setConfig(normalizeConfig(a.draft.config));
     setBaseRevision(a.draft.revision);
     setSavedAt(a.draft.saved_at);
     setStatus('saved');
@@ -45,7 +46,7 @@ export function useDraftEditor(agentId: string) {
   useEffect(() => {
     if (!agent) return;
     if (statusRef.current === 'saved' && agent.draft.revision !== baseRef.current) {
-      setConfig(agent.draft.config);
+      setConfig(normalizeConfig(agent.draft.config));
       setBaseRevision(agent.draft.revision);
       setSavedAt(agent.draft.saved_at);
     }

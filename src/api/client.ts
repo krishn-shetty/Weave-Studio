@@ -27,6 +27,7 @@ import type {
   Version,
   VersionSummary,
 } from './types';
+import { toServerConfig } from '../utils/configFactory';
 
 const BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) || '/api';
 
@@ -181,7 +182,7 @@ export const api = {
 
   // 5. Validate config
   validate: (config: AgentConfig, opts?: RequestOptions): Promise<ValidationReport> =>
-    request('POST', '/validate', { ...opts, body: config }),
+    request('POST', '/validate', { ...opts, body: toServerConfig(config) }),
 
   // 6. List bots
   listBots: async (opts?: RequestOptions): Promise<BotSummary[]> => {
@@ -202,11 +203,13 @@ export const api = {
     request('GET', `/bots/${enc(id)}/draft`, opts),
 
   // 10. Save draft
-  saveDraft: (id: string, config: AgentConfig, baseRevision?: number | null, opts?: RequestOptions): Promise<SavedDraft> =>
-    request('PUT', `/bots/${enc(id)}/draft`, {
+  saveDraft: (id: string, config: AgentConfig, baseRevision?: number | null, opts?: RequestOptions): Promise<SavedDraft> => {
+    const serverConf = toServerConfig(config);
+    return request('PUT', `/bots/${enc(id)}/draft`, {
       ...opts,
-      body: baseRevision === undefined || baseRevision === null ? { config } : { config, base_revision: baseRevision },
-    }),
+      body: baseRevision === undefined || baseRevision === null ? { config: serverConf } : { config: serverConf, base_revision: baseRevision },
+    });
+  },
 
   // 11. Publish version
   publish: (id: string, bump?: 'major' | 'minor' | 'patch', opts?: RequestOptions): Promise<Published> =>
@@ -248,7 +251,10 @@ export const api = {
 
   // 19. Preview prompt
   previewPrompt: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
-    request('POST', '/preview/prompt', { ...opts, body }),
+    request('POST', '/preview/prompt', {
+      ...opts,
+      body: body && body.config ? { ...body, config: toServerConfig(body.config) } : body,
+    }),
 
   // 20. Preview tool result
   previewResult: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>

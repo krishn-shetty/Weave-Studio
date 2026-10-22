@@ -47,10 +47,11 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
 
   if (!config) return null;
 
-  const entryAgent = config.agents.items.find((a) => a.id === config.agents.entry) ?? config.agents.items[0];
-  const subAgents = config.agents.items.filter((a) => a.id !== entryAgent?.id);
+  const agentItems = config.agents?.items ?? [];
+  const entryAgent = agentItems.find((a) => a.id === config.agents?.entry) ?? agentItems[0];
+  const subAgents = agentItems.filter((a) => a.id !== entryAgent?.id);
 
-  const enabledChannels = config.channels.filter((c) => c.enabled);
+  const enabledChannels = (config.channels ?? []).filter((c) => c.enabled);
   const tools = config.tools ?? [];
 
   return (
@@ -172,7 +173,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
             <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted">
               <span>2. Conversational Agent Roles & Handoffs</span>
               <span className="text-line-strong">———</span>
-              <span>{config.agents.items.length} role configured</span>
+              <span>{agentItems.length} role configured</span>
             </div>
 
             <div className="grid gap-6 md:grid-cols-[1.5fr_1fr]">
