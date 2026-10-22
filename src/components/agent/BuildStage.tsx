@@ -162,13 +162,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
       />
 
       {editor.conflict && (
-        <ConflictDialog
-          open={conflictOpen || editor.status === 'conflict'}
-          onClose={() => setConflictOpen(false)}
-          conflict={editor.conflict}
-          mine={editor.config}
-          onResolve={editor.resolveConflict}
-        />
+        <ConflictDialog editor={editor} />
       )}
 
       <AiAssistantModal

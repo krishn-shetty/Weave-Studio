@@ -15,6 +15,7 @@ import {
   XIcon
 } from 'lucide-react';
 import { AgentConfig, ChannelType } from '../../../types/studio';
+import { getInstructionsText } from '../../../utils/validate';
 import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { StatusChip } from '../../ui/StatusChip';
@@ -86,7 +87,7 @@ export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModal
 
     // Role Instructions
     lines.push(`\n[ROLE INSTRUCTIONS: ${activeAgent?.name ?? 'Main'}]`);
-    lines.push(activeAgent?.instructions || 'Assist the user courteously and accurately.');
+    lines.push(getInstructionsText(activeAgent?.instructions) || 'Assist the user courteously and accurately.');
 
     // Persona Rules
     if (config.persona.rules) {
@@ -97,7 +98,8 @@ export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModal
     // Handoff rules
     if (activeAgent?.handoffs && activeAgent.handoffs.length > 0) {
       lines.push('\n[AVAILABLE HANDOFFS]');
-      lines.push(`You may transfer the customer to the following specialized agents: ${activeAgent.handoffs.join(', ')}.`);
+      const handoffLabels = activeAgent.handoffs.map((h: any) => typeof h === 'string' ? h : (h.to || h.id || 'target'));
+      lines.push(`You may transfer the customer to the following specialized agents: ${handoffLabels.join(', ')}.`);
     }
 
     return lines.join('\n');

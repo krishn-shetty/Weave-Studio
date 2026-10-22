@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   BookOpenIcon,
@@ -11,472 +11,424 @@ import {
   SearchIcon,
   SparklesIcon,
   Trash2Icon,
-  UploadCloudIcon
+  UploadCloudIcon,
 } from 'lucide-react';
-import {
-  initialKnowledgeBases,
-  initialKnowledgeFiles,
-  KnowledgeBaseItem,
-  KnowledgeFile,
-  sampleQueryMatches
-} from '../data/knowledgeData';
 import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Segmented } from '../components/ui/Segmented';
 import { Dialog } from '../components/ui/Dialog';
 import { formatBytes, formatDateTime } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
+import { api } from '../api/client';
+import { useStudio } from '../contexts/StudioContext';
+import type { KnowledgeBase, KnowledgeFile, KnowledgeSearchResult } from '../api/types';
 
 type Tab = 'search' | 'bases' | 'files';
 
+function formatUsedBy(usedBy: unknown): string {
+  if (Array.isArray(usedBy)) {
+    return usedBy.length > 0 ? usedBy.join(', ') : 'All roles';
+  }
+  if (usedBy && typeof usedBy === 'object') {
+    const obj = usedBy as { agents?: string[]; tools?: string[] };
+    const agents = Array.isArray(obj.agents) ? obj.agents : [];
+    const tools = Array.isArray(obj.tools) ? obj.tools : [];
+    const all = [...agents, ...tools];
+    return all.length > 0 ? all.join(', ') : 'All roles';
+  }
+  if (typeof usedBy === 'string' && usedBy.trim()) {
+    return usedBy;
+  }
+  return 'All roles';
+}
+
 export function Knowledge() {
+  const { agents } = useStudio();
   const [tab, setTab] = useState<Tab>('search');
-  const [bases, setBases] = useState<KnowledgeBaseItem[]>(initialKnowledgeBases);
-  const [files, setFiles] = useState<KnowledgeFile[]>(initialKnowledgeFiles);
-  const [selectedBaseId, setSelectedBaseId] = useState<string>('billing_policies');
+
+  // Agent selector
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => agents[0]?.id || 'voice-test');
+
+  useEffect(() => {
+    if (agents.length > 0 && !agents.some((a) => a.id === selectedAgentId)) {
+      setSelectedAgentId(agents[0].id);
+    }
+  }, [agents, selectedAgentId]);
+
+  const [bases, setBases] = useState<KnowledgeBase[]>([]);
+  const [files, setFiles] = useState<KnowledgeFile[]>([]);
+  const [selectedBaseId, setSelectedBaseId] = useState<string>('');
+  const [loading, setLoading] = useState(true);
 
   // Search State
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState(sampleQueryMatches.bill);
+  const [searchResults, setSearchResults] = useState<Array<{ text: string; source: string; score: number }>>([]);
+  const [searchMs, setSearchMs] = useState<number | null>(null);
 
   // Build Job State
   const [buildingBaseId, setBuildingBaseId] = useState<string | null>(null);
-  const [buildProgress, setBuildProgress] = useState(0);
   const [buildLogs, setBuildLogs] = useState<string[]>([]);
 
   // Upload Dialog State
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  // Fetch knowledge data for selected agent
+  const fetchKnowledge = async () => {
+    if (!selectedAgentId) return;
+    setLoading(true);
+    try {
+      const [knowledgeRes, filesRes] = await Promise.allSettled([
+        api.getKnowledge(selectedAgentId),
+        api.listKnowledgeFiles(selectedAgentId),
+      ]);
+
+      let loadedBases: KnowledgeBase[] = [];
+      if (knowledgeRes.status === 'fulfilled') {
+        const val: any = knowledgeRes.value;
+        if (Array.isArray(val)) loadedBases = val;
+        else if (val && Array.isArray(val.bases)) loadedBases = val.bases;
+      }
+      setBases(loadedBases);
+      if (loadedBases.length > 0 && (!selectedBaseId || !loadedBases.some((b) => b.id === selectedBaseId))) {
+        setSelectedBaseId(loadedBases[0].id);
+      }
+
+      if (filesRes.status === 'fulfilled' && Array.isArray(filesRes.value) && filesRes.value.length > 0) {
+        setFiles(filesRes.value);
+      } else if (knowledgeRes.status === 'fulfilled' && Array.isArray((knowledgeRes.value as any)?.files)) {
+        setFiles((knowledgeRes.value as any).files);
+      } else {
+        setFiles([]);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchKnowledge();
+  }, [selectedAgentId]);
 
   const selectedBase = useMemo(
     () => bases.find((b) => b.id === selectedBaseId) ?? bases[0],
     [bases, selectedBaseId]
   );
 
-  const handleSearch = (e?: React.FormEvent) => {
+  const handleSearch = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!searchQuery.trim()) return;
+    if (!searchQuery.trim() || !selectedBaseId) return;
     setSearching(true);
-
-    window.setTimeout(() => {
-      const q = searchQuery.toLowerCase();
-      let matches = sampleQueryMatches.default;
-      if (q.includes('bill') || q.includes('pay') || q.includes('debit') || q.includes('cost') || q.includes('tariff')) {
-        matches = sampleQueryMatches.bill;
-      } else if (q.includes('outage') || q.includes('gas') || q.includes('leak') || q.includes('emergency') || q.includes('power')) {
-        matches = sampleQueryMatches.outage;
-      } else if (q.includes('appoint') || q.includes('dentist') || q.includes('clinic') || q.includes('book')) {
-        matches = sampleQueryMatches.appointment;
-      }
-      setSearchResults(matches);
+    try {
+      const result: KnowledgeSearchResult = await api.searchKnowledge(selectedAgentId, selectedBaseId, {
+        query: searchQuery.trim(),
+        top_k: 4,
+      });
+      setSearchResults(result.hits || []);
+      setSearchMs(result.ms);
+    } catch (err: any) {
+      toast.error('Search failed', { description: err?.message || 'Embedding model or key unavailable.' });
+    } finally {
       setSearching(false);
-    }, 450);
+    }
   };
 
-  const handleStartBuild = (baseId: string) => {
+  const handleStartBuild = async (baseId: string) => {
     setBuildingBaseId(baseId);
-    setBuildProgress(10);
-    setBuildLogs([
-      `[${new Date().toLocaleTimeString()}] Fetching source documents for base '${baseId}'...`,
-      `[${new Date().toLocaleTimeString()}] Chunking text passages using recursive splitter (500 tokens, 50 overlap)...`
-    ]);
+    setBuildLogs([`[${new Date().toLocaleTimeString()}] Submitting build job for base '${baseId}'...`]);
 
-    const step1 = setTimeout(() => {
-      setBuildProgress(45);
-      setBuildLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] Generating embeddings via text-embedding-3-small (1536 dim)...`,
-        `[${new Date().toLocaleTimeString()}] Embedding batch 1/3 (50 passages completed)...`
-      ]);
-    }, 900);
+    try {
+      await api.buildKnowledge(selectedAgentId, baseId);
+      toast.info('Vector index build started');
 
-    const step2 = setTimeout(() => {
-      setBuildProgress(80);
-      setBuildLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] Building HNSW vector index with cosine similarity...`,
-        `[${new Date().toLocaleTimeString()}] Verifying index consistency and writing metadata...`
-      ]);
-    }, 1800);
-
-    const step3 = setTimeout(() => {
-      setBuildProgress(100);
-      setBuildLogs((prev) => [
-        ...prev,
-        `[${new Date().toLocaleTimeString()}] Index build complete. 182 passages indexed successfully.`
-      ]);
+      // Poll status
+      const pollTimer = setInterval(async () => {
+        try {
+          const status = await api.knowledgeStatus(selectedAgentId, baseId);
+          if (status.build?.log && status.build.log.length > 0) {
+            setBuildLogs(status.build.log);
+          }
+          if (status.build?.status === 'done') {
+            clearInterval(pollTimer);
+            setBuildingBaseId(null);
+            toast.success(`Vector index built for ${baseId}`);
+            fetchKnowledge();
+          } else if (status.build?.status === 'failed') {
+            clearInterval(pollTimer);
+            setBuildingBaseId(null);
+            toast.error('Build failed', { description: status.problems?.join(', ') || 'Error building index' });
+          }
+        } catch {
+          clearInterval(pollTimer);
+          setBuildingBaseId(null);
+        }
+      }, 1500);
+    } catch (err: any) {
       setBuildingBaseId(null);
-      setBases((prev) =>
-        prev.map((b) =>
-          b.id === baseId
-            ? { ...b, status: 'ready', lastBuilt: new Date().toISOString(), passagesCount: b.passagesCount + 14 }
-            : b
-        )
-      );
-      toast.success('Knowledge index built successfully', {
-        description: 'New passages are live for test searches and agent retrieval.'
-      });
-    }, 2700);
-
-    return () => {
-      clearTimeout(step1);
-      clearTimeout(step2);
-      clearTimeout(step3);
-    };
+      toast.error('Could not start build', { description: err?.message || 'Check embedding provider key.' });
+    }
   };
 
-  const handleUploadSubmit = () => {
-    if (!uploadedFileName.trim()) return;
+  const handleUploadSubmit = async () => {
+    const name = uploadedFileName.trim();
+    if (!name) return;
+
     setUploading(true);
-
-    window.setTimeout(() => {
-      const ext = uploadedFileName.endsWith('.pdf')
-        ? 'pdf'
-        : uploadedFileName.endsWith('.csv')
-        ? 'csv'
-        : 'markdown';
-
-      const newFile: KnowledgeFile = {
-        id: `f-${Date.now()}`,
-        name: uploadedFileName.trim(),
-        sizeBytes: 154200,
-        modified: new Date().toISOString(),
-        type: ext,
-        usedByBases: [selectedBaseId]
-      };
-
-      setFiles((prev) => [newFile, ...prev]);
-      setBases((prev) =>
-        prev.map((b) =>
-          b.id === selectedBaseId
-            ? { ...b, files: [...b.files, newFile.name], status: 'needs_rebuild' }
-            : b
-        )
-      );
-
-      setUploading(false);
+    try {
+      const filePayload = uploadedFile || new Blob(['Sample knowledge document content.'], { type: 'text/plain' });
+      await api.uploadKnowledgeFile(selectedAgentId, name, filePayload);
+      toast.success(`File ${name} uploaded`);
       setUploadOpen(false);
+      setUploadedFile(null);
       setUploadedFileName('');
-      toast.success(`'${newFile.name}' uploaded`, {
-        description: `Associated with '${selectedBase.name}'. Rebuild the index to update search.`
-      });
-    }, 800);
+      fetchKnowledge();
+    } catch (err: any) {
+      toast.error('Upload failed', { description: err?.message || 'Upload rejected by server.' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteFile = async (fileName: string) => {
+    try {
+      await api.deleteKnowledgeFile(selectedAgentId, fileName, true);
+      toast.success(`File ${fileName} deleted`);
+      fetchKnowledge();
+    } catch (err: any) {
+      toast.error('Delete failed', { description: err?.message });
+    }
   };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Knowledge</h1>
           <p className="mt-1 text-sm text-muted">
-            Upload company policies and manuals, build vector indices, and test retrieval for your agents.
+            Vector stores, documents, and real semantic search backed by the Agent Builder API.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => setUploadOpen(true)}>
-            <UploadCloudIcon className="h-4 w-4" aria-hidden />
-            Upload document
+
+        <div className="flex items-center gap-3">
+          <label className="text-xs text-muted flex items-center gap-2">
+            Agent:
+            <select
+              value={selectedAgentId}
+              onChange={(e) => setSelectedAgentId(e.target.value)}
+              className={cn(inputClass, 'w-auto py-1 text-xs')}
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button variant="secondary" size="sm" onClick={fetchKnowledge} disabled={loading}>
+            <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
           </Button>
-          <Button
-            variant="primary"
-            disabled={buildingBaseId !== null}
-            onClick={() => handleStartBuild(selectedBaseId)}
-          >
-            {buildingBaseId === selectedBaseId ? (
-              <>
-                <LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />
-                Building index…
-              </>
-            ) : (
-              <>
-                <RefreshCwIcon className="h-4 w-4" aria-hidden />
-                Build index
-              </>
-            )}
+          <Button variant="primary" size="sm" onClick={() => setUploadOpen(true)}>
+            <PlusIcon className="h-4 w-4" aria-hidden />
+            Upload file
           </Button>
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+      <div className="mt-6">
         <Segmented
           label="Knowledge View"
           options={[
-            { value: 'search', label: 'Test Vector Search' },
-            { value: 'bases', label: 'Knowledge Bases' },
-            { value: 'files', label: 'Uploaded Files' }
+            { value: 'search', label: 'Semantic Search Test' },
+            { value: 'bases', label: `Knowledge Bases (${bases.length})` },
+            { value: 'files', label: `Uploaded Files (${files.length})` },
           ]}
           value={tab}
           onChange={(v) => setTab(v as Tab)}
         />
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span>Active base:</span>
-          <select
-            className={cn(inputClass, 'w-auto py-1 text-xs')}
-            value={selectedBaseId}
-            onChange={(e) => setSelectedBaseId(e.target.value)}
-          >
-            {bases.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name} ({b.passagesCount} passages)
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
 
-      {/* Building Job Alert */}
-      {buildingBaseId && (
-        <div className="mt-6 rounded-xl border border-line bg-surface p-5 shadow-panel" aria-live="polite">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <LoaderCircleIcon className="h-5 w-5 animate-spin text-accent" aria-hidden />
-              <div>
-                <p className="text-sm font-semibold text-ink">
-                  Building index for {selectedBase.name}
-                </p>
-                <p className="text-xs text-muted">
-                  Embedding passages using {selectedBase.embeddingModel}. The previous index continues serving callers during build.
-                </p>
-              </div>
-            </div>
-            <span className="font-mono text-sm font-semibold text-accent">{buildProgress}%</span>
-          </div>
-
-          <div className="mt-3.5 h-2 w-full overflow-hidden rounded-full bg-subtle">
-            <div
-              className="h-full bg-accent transition-all duration-300"
-              style={{ width: `${buildProgress}%` }}
-            />
-          </div>
-
-          <div className="mt-3 max-h-28 overflow-y-auto rounded-lg bg-canvas p-2.5 font-mono text-[11px] text-muted">
-            {buildLogs.map((log, i) => (
-              <p key={i}>{log}</p>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* TAB 1: TEST SEARCH */}
       {tab === 'search' && (
         <div className="mt-6 space-y-6">
-          <form onSubmit={handleSearch} className="flex gap-2">
-            <div className="relative flex-1">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Ask a question or test search term, e.g. 'direct debit payment dates', 'gas leak smell', or 'copay'..."
-                className={cn(inputClass, 'pl-9 text-sm')}
-              />
-            </div>
-            <Button variant="primary" type="submit" disabled={searching}>
-              {searching ? (
-                <>
-                  <LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />
-                  Searching…
-                </>
-              ) : (
-                'Run test search'
-              )}
-            </Button>
-          </form>
+          <div className="rounded-xl border border-line bg-surface p-6 shadow-panel">
+            <h2 className="text-base font-semibold text-ink">Semantic Search Try-It</h2>
+            <p className="mt-1 text-sm text-muted">
+              Test what passages your agent retrieves for a customer query using real vector search.
+            </p>
 
-          <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
-            <div className="flex items-center gap-2">
-              <span>Quick tests:</span>
-              {['Direct debit due date', 'Suspected gas leak', 'Cancellation fee'].map((queryText) => (
-                <button
-                  key={queryText}
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery(queryText);
-                    window.setTimeout(() => handleSearch(), 50);
-                  }}
-                  className="rounded-full bg-subtle px-2.5 py-1 text-ink-soft transition hover:bg-line hover:text-ink"
-                >
-                  {queryText}
-                </button>
-              ))}
-            </div>
-            <span>
-              {searchResults.length} ranked {searchResults.length === 1 ? 'passage hit' : 'passage hits'}
-            </span>
-          </div>
-
-          <div className="grid gap-6 lg:grid-cols-[1.5fr_1fr]">
-            <div className="space-y-4">
-              <h2 className="text-sm font-semibold text-ink">Retrieved Passages & Relevance Scores</h2>
-              {searchResults.map((hit, idx) => {
-                const isHigh = hit.score >= 0.85;
-                const isMed = hit.score >= 0.65 && hit.score < 0.85;
-                return (
-                  <article
-                    key={hit.id}
-                    className="rounded-xl border border-line bg-surface p-4 shadow-panel transition hover:border-line-strong"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2.5 text-xs">
-                      <div className="flex items-center gap-2 font-mono text-muted">
-                        <FileTextIcon className="h-3.5 w-3.5 text-accent" aria-hidden />
-                        <span className="font-semibold text-ink">{hit.source}</span>
-                        {hit.location && <span>· {hit.location}</span>}
-                      </div>
-                      <StatusChip tone={isHigh ? 'success' : isMed ? 'accent' : 'neutral'}>
-                        {(hit.score * 100).toFixed(0)}% Match ({hit.score})
-                      </StatusChip>
-                    </div>
-                    <p className="mt-3 text-sm leading-relaxed text-ink-soft">
-                      {hit.passage}
-                    </p>
-                  </article>
-                );
-              })}
-            </div>
-
-            {/* Model Injection Preview */}
-            <div className="self-start rounded-xl border border-line bg-surface p-5 shadow-panel">
-              <div className="flex items-center gap-2">
-                <SparklesIcon className="h-4 w-4 text-accent" aria-hidden />
-                <h3 className="text-sm font-semibold text-ink">What the Model Sees</h3>
+            {bases.length === 0 ? (
+              <div className="mt-6 rounded-lg border border-line bg-subtle p-6 text-center text-sm text-muted">
+                No knowledge base configured for {selectedAgentId} yet. Define a knowledge base in your bot configuration or select another agent.
               </div>
-              <p className="mt-1 text-xs text-muted">
-                How top-scoring passages are injected into the agent&apos;s system context during runtime calls.
-              </p>
-              <div className="mt-3.5 rounded-lg bg-canvas p-3 font-mono text-xs leading-relaxed text-ink-soft">
-                <p className="text-muted"># RETRIEVED KNOWLEDGE (Score &gt;= 0.60):</p>
-                {searchResults.slice(0, 2).map((s, i) => (
-                  <div key={i} className="mt-2 border-t border-line/60 pt-2">
-                    <p className="text-[11px] font-semibold text-accent">
-                      [Document: {s.source}]
-                    </p>
-                    <p className="mt-1 text-[11px] text-ink">{s.passage}</p>
+            ) : (
+              <>
+                <form onSubmit={handleSearch} className="mt-5 flex gap-2">
+                  <div className="relative flex-1">
+                    <SearchIcon
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted"
+                      aria-hidden
+                    />
+                    <input
+                      type="search"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="e.g. When are bills due? Can I pay online?"
+                      className={cn(inputClass, 'pl-9 text-sm')}
+                    />
                   </div>
-                ))}
-              </div>
-              <div className="mt-3 flex items-center gap-2 text-[11px] text-muted">
-                <CheckCircle2Icon className="h-3.5 w-3.5 text-success" />
-                Agents quote source documents and never invent policy details.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+                  <Button variant="primary" type="submit" disabled={searching || !searchQuery.trim()}>
+                    {searching ? (
+                      <>
+                        <LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />
+                        Searching…
+                      </>
+                    ) : (
+                      'Search base'
+                    )}
+                  </Button>
+                </form>
 
-      {/* TAB 2: KNOWLEDGE BASES */}
-      {tab === 'bases' && (
-        <div className="mt-6 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {bases.map((base) => (
-              <div
-                key={base.id}
-                className={cn(
-                  'flex flex-col justify-between rounded-xl border p-5 transition shadow-panel',
-                  selectedBaseId === base.id ? 'border-accent bg-accent-soft/20' : 'border-line bg-surface'
+                {searchMs !== null && (
+                  <p className="mt-2 text-xs text-muted">
+                    Returned {searchResults.length} passages in {searchMs}ms
+                  </p>
                 )}
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <StatusChip tone={base.status === 'ready' ? 'success' : 'warning'}>
-                      {base.status === 'ready' ? 'Index Ready' : 'Needs Rebuild'}
-                    </StatusChip>
-                    <span className="font-mono text-xs text-muted">
-                      {base.passagesCount} passages
-                    </span>
-                  </div>
-                  <h3 className="mt-3 text-base font-semibold text-ink">{base.name}</h3>
-                  <p className="mt-1 text-xs text-muted leading-relaxed">{base.description}</p>
 
-                  <div className="mt-4 space-y-1.5 border-t border-line/60 pt-3 text-xs text-muted">
-                    <p>
-                      <span className="font-medium text-ink">Files:</span> {base.files.join(', ')}
-                    </p>
-                    <p>
-                      <span className="font-medium text-ink">Used by:</span> {base.agentsUsing.join(', ')}
-                    </p>
-                    <p>
-                      <span className="font-medium text-ink">Model:</span> {base.embeddingModel}
-                    </p>
-                  </div>
+                <div className="mt-6 space-y-3">
+                  {searchResults.length === 0 ? (
+                    <p className="text-xs text-muted italic">Type a query above to test retrieval against this base.</p>
+                  ) : (
+                    searchResults.map((hit, i) => (
+                      <div key={i} className="rounded-lg border border-line bg-canvas p-4 text-sm">
+                        <div className="flex items-center justify-between text-xs text-muted">
+                          <span className="font-medium text-ink">{hit.source}</span>
+                          <span className="font-mono text-accent">Score: {(hit.score * 100).toFixed(1)}%</span>
+                        </div>
+                        <p className="mt-2 text-ink-soft leading-relaxed">{hit.text}</p>
+                      </div>
+                    ))
+                  )}
                 </div>
-
-                <div className="mt-5 flex items-center justify-between gap-2 pt-2">
-                  <Button
-                    size="sm"
-                    variant={selectedBaseId === base.id ? 'primary' : 'secondary'}
-                    onClick={() => setSelectedBaseId(base.id)}
-                  >
-                    {selectedBaseId === base.id ? 'Selected base' : 'Select'}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleStartBuild(base.id)}
-                    disabled={buildingBaseId !== null}
-                  >
-                    Rebuild
-                  </Button>
-                </div>
-              </div>
-            ))}
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* TAB 3: UPLOADED FILES */}
-      {tab === 'files' && (
-        <div className="mt-6 overflow-x-auto rounded-lg border border-line bg-surface">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b border-line text-xs text-muted">
-              <tr>
-                <th scope="col" className="px-4 py-2.5 font-medium">Document Name</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Type</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Size</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Modified</th>
-                <th scope="col" className="px-4 py-2.5 font-medium">Associated Bases</th>
-                <th scope="col" className="px-4 py-2.5 font-medium text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {files.map((file) => (
-                <tr key={file.id} className="hover:bg-canvas">
-                  <td className="px-4 py-3 font-medium text-ink">
-                    <div className="flex items-center gap-2">
-                      <FileTextIcon className="h-4 w-4 text-accent" />
-                      <span>{file.name}</span>
+      {tab === 'bases' && (
+        <div className="mt-6 space-y-6">
+          {bases.length === 0 ? (
+            <div className="rounded-xl border border-line bg-surface p-12 text-center text-sm text-muted">
+              No knowledge bases defined in this bot’s draft configuration.
+            </div>
+          ) : (
+            <div className="grid gap-6">
+              {bases.map((base) => (
+                <div key={base.id} className="rounded-xl border border-line bg-surface p-6 shadow-panel">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-ink">{base.id}</h3>
+                      <p className="text-xs text-muted mt-0.5">Type: {base.type} · Mode: {base.mode}</p>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 uppercase text-xs text-muted">{file.type}</td>
-                  <td className="px-4 py-3 text-xs text-muted">{formatBytes(file.sizeBytes)}</td>
-                  <td className="px-4 py-3 text-xs text-muted">{formatDateTime(file.modified)}</td>
-                  <td className="px-4 py-3 text-xs">
-                    <div className="flex flex-wrap gap-1">
-                      {file.usedByBases.map((b) => (
-                        <span key={b} className="rounded bg-subtle px-1.5 py-0.5 text-muted">
-                          {b}
-                        </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => handleStartBuild(base.id)}
+                      disabled={buildingBaseId === base.id}
+                    >
+                      {buildingBaseId === base.id ? (
+                        <>
+                          <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" />
+                          Building…
+                        </>
+                      ) : (
+                        'Build Vector Index'
+                      )}
+                    </Button>
+                  </div>
+
+                  {buildingBaseId === base.id && buildLogs.length > 0 && (
+                    <div className="mt-4 rounded-lg bg-black/90 p-3 font-mono text-xs text-green-400">
+                      {buildLogs.map((l, i) => (
+                        <p key={i}>{l}</p>
                       ))}
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        setFiles((prev) => prev.filter((f) => f.id !== file.id));
-                        toast.success(`Removed ${file.name}`);
-                      }}
-                      title="Remove file"
-                    >
-                      <Trash2Icon className="h-3.5 w-3.5 text-muted hover:text-danger" />
-                    </Button>
-                  </td>
-                </tr>
+                  )}
+
+                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs border-t border-line pt-4">
+                    <div>
+                      <span className="text-muted block">Sources</span>
+                      <span className="text-ink font-medium">{base.sources?.length || 0} files</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block">Used by</span>
+                      <span className="text-ink font-medium">{formatUsedBy(base.used_by)}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted block">Embedding Key</span>
+                      <span className={cn('font-medium', base.embedding_key_available ? 'text-green-600' : 'text-amber-600')}>
+                        {base.embedding_key_available ? 'Available' : 'Missing'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-muted block">Status</span>
+                      <span className="text-ink font-medium">{base.build?.status || 'Ready'}</span>
+                    </div>
+                  </div>
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'files' && (
+        <div className="mt-6">
+          {files.length === 0 ? (
+            <div className="rounded-xl border border-line bg-surface p-12 text-center text-sm text-muted">
+              No files uploaded for {selectedAgentId} yet. Click "Upload file" to add guides, FAQs, or markdown.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-line bg-surface">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs text-muted">
+                    <th className="px-4 py-2.5 font-medium">Name</th>
+                    <th className="px-4 py-2.5 font-medium">Size</th>
+                    <th className="px-4 py-2.5 font-medium">Modified</th>
+                    <th className="px-4 py-2.5 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {files.map((file) => (
+                    <tr key={file.name}>
+                      <td className="px-4 py-3 font-medium text-ink flex items-center gap-2">
+                        <FileTextIcon className="h-4 w-4 text-muted shrink-0" />
+                        {file.name}
+                      </td>
+                      <td className="px-4 py-3 text-muted">{formatBytes(file.size)}</td>
+                      <td className="px-4 py-3 text-muted">{formatDateTime(file.modified)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteFile(file.name)}
+                          className="text-red-500 hover:text-red-600"
+                        >
+                          <Trash2Icon className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -484,8 +436,8 @@ export function Knowledge() {
       <Dialog
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        title="Upload Document"
-        description="Add PDF guides, Markdown FAQ documents, or CSV tables to index for agent retrieval."
+        title="Upload Knowledge Document"
+        description="Upload a text, markdown, PDF or JSON document directly to this bot on the Agent Builder server."
         footer={
           <>
             <Button variant="ghost" onClick={() => setUploadOpen(false)}>
@@ -498,7 +450,7 @@ export function Knowledge() {
                   Uploading…
                 </>
               ) : (
-                'Upload and link to base'
+                'Upload'
               )}
             </Button>
           </>
@@ -506,39 +458,29 @@ export function Knowledge() {
       >
         <div className="space-y-4">
           <div>
-            <label className="text-sm font-medium text-ink">File Name or Preset</label>
+            <label className="text-xs font-medium text-ink-soft block">Choose file from disk</label>
             <input
-              type="text"
-              value={uploadedFileName}
-              onChange={(e) => setUploadedFileName(e.target.value)}
-              placeholder="e.g. refund_policy_2026.pdf"
-              className={cn(inputClass, 'mt-1 text-sm')}
+              type="file"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setUploadedFile(f);
+                  setUploadedFileName(f.name);
+                }
+              }}
+              className="mt-1 text-xs text-muted"
             />
           </div>
 
           <div>
-            <span className="text-xs text-muted">Quick sample presets:</span>
-            <div className="mt-1.5 flex flex-wrap gap-1.5">
-              {[
-                'customer_disputes_code_of_practice.pdf',
-                'residential_ev_charging_tariffs.md',
-                'service_level_agreements_v2.pdf'
-              ].map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setUploadedFileName(preset)}
-                  className="rounded-md border border-line bg-subtle px-2 py-1 text-xs text-ink hover:bg-line-strong/20"
-                >
-                  + {preset}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-lg bg-subtle p-3 text-xs text-muted">
-            <p className="font-medium text-ink">Target knowledge base:</p>
-            <p className="mt-0.5">{selectedBase.name} ({selectedBase.id})</p>
+            <label className="text-xs font-medium text-ink-soft block">File Name on Server</label>
+            <input
+              type="text"
+              value={uploadedFileName}
+              onChange={(e) => setUploadedFileName(e.target.value)}
+              placeholder="e.g. faq_customer_guide.md"
+              className={cn(inputClass, 'mt-1 text-sm')}
+            />
           </div>
         </div>
       </Dialog>

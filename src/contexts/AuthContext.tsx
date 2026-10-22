@@ -1,11 +1,14 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState, useEffect } from 'react';
 import type { Role } from '../types/studio';
+import { setApiUser } from '../api/client';
 
 export type Permission = 'edit' | 'publish' | 'deploy' | 'deploy_production';
 
-interface User {
+export interface User {
+  id: string;
   name: string;
   email: string;
+  phone?: string;
   initials: string;
   role: Role;
 }
@@ -14,7 +17,7 @@ interface AuthValue {
   user: User | null;
   signingIn: boolean;
   sessionExpired: boolean;
-  signIn: () => Promise<void>;
+  signIn: (identifier?: string, password?: string, role?: Role) => Promise<{ ok: boolean; error?: string }>;
   signOut: () => void;
   expireSession: () => void;
   reauthenticate: () => Promise<void>;
@@ -28,26 +31,77 @@ interface AuthProviderProps {
   children: React.ReactNode;
 }
 
+const SESSION_STORAGE_KEY = 'weave_auth_user';
+
 export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
-  const [signedIn, setSignedIn] = useState(false);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setApiUser(parsed.email || parsed.name || '');
+        return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
+
   const [signingIn, setSigningIn] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
 
-  const user = useMemo<User | null>(
-    () => signedIn ? { name: 'Asha Bello', email: 'asha.bello@northwind.example', initials: 'AB', role: assignedRole } : null,
-    [signedIn, assignedRole]
+  useEffect(() => {
+    if (user) {
+      setApiUser(user.email || user.name || '');
+      try {
+        sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+      } catch {
+        // ignore
+      }
+    } else {
+      setApiUser('');
+      try {
+        sessionStorage.removeItem(SESSION_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+    }
+  }, [user]);
+
+  const signIn = useCallback(
+    async (identifier = 'shetty@weave.local', password = '', role = assignedRole): Promise<{ ok: boolean; error?: string }> => {
+      setSigningIn(true);
+      await new Promise((r) => setTimeout(r, 400));
+
+      const cleanId = identifier.trim();
+      if (!cleanId) {
+        setSigningIn(false);
+        return { ok: false, error: 'Enter your email or phone number.' };
+      }
+
+      const namePart = cleanId.split('@')[0] || cleanId;
+      const initials = namePart.slice(0, 2).toUpperCase() || 'US';
+
+      const newUser: User = {
+        id: `usr_${Date.now().toString(36)}`,
+        name: namePart.charAt(0).toUpperCase() + namePart.slice(1),
+        email: cleanId.includes('@') ? cleanId : `${cleanId}@weave.local`,
+        phone: cleanId.includes('@') ? undefined : cleanId,
+        initials,
+        role,
+      };
+
+      setUser(newUser);
+      setSigningIn(false);
+      setSessionExpired(false);
+      return { ok: true };
+    },
+    [assignedRole]
   );
 
-  const signIn = useCallback(async () => {
-    setSigningIn(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setSignedIn(true);
-    setSigningIn(false);
-    setSessionExpired(false);
-  }, []);
-
   const signOut = useCallback(() => {
-    setSignedIn(false);
+    setUser(null);
     setSessionExpired(false);
   }, []);
 
@@ -57,7 +111,7 @@ export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
 
   const reauthenticate = useCallback(async () => {
     setSigningIn(true);
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 500));
     setSessionExpired(false);
     setSigningIn(false);
   }, []);
@@ -75,6 +129,7 @@ export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
     () => ({ user, signingIn, sessionExpired, signIn, signOut, expireSession, reauthenticate, can }),
     [user, signingIn, sessionExpired, signIn, signOut, expireSession, reauthenticate, can]
   );
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

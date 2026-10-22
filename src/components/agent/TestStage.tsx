@@ -8,6 +8,7 @@ import { useTestSession } from '../../hooks/useTestSession';
 import { TestConsole } from './test/TestConsole';
 import { TracePanel } from './test/TracePanel';
 import { ScenariosRunner } from './test/ScenariosRunner';
+import { VoiceReadinessPanel } from './test/VoiceReadinessPanel';
 import { Button } from '../ui/Button';
 import { Segmented } from '../ui/Segmented';
 import { describePath } from '../../utils/validate';
@@ -26,49 +27,45 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
   const hasWebChannel = config.channels.some((c) => c.enabled && c.type !== 'phone');
 
   let blocker: React.ReactNode = null;
-  if (testBackend === 'not_configured') {
-    blocker =
-    <Blocker
-      icon={<ServerOffIcon className="h-5 w-5 text-muted" aria-hidden />}
-      title="Live testing isn’t set up on the server yet"
-      body="The Agent Builder API needs LiveKit credentials (LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET) before anyone can talk to a draft. Ask your admin to add them — no change is needed in your agent." />;
-
-
-  } else if (!validation.valid) {
-    blocker =
-    <Blocker
-      icon={<CircleAlertIcon className="h-5 w-5 text-danger" aria-hidden />}
-      title={`Fix ${validation.errors.length} ${validation.errors.length === 1 ? 'problem' : 'problems'} before testing`}
-      body="A draft with errors can’t start a conversation. Each problem links to the setting.">
-      
+  if (!validation.valid) {
+    blocker = (
+      <Blocker
+        icon={<CircleAlertIcon className="h-5 w-5 text-danger" aria-hidden />}
+        title={`Fix ${validation.errors.length} ${validation.errors.length === 1 ? 'problem' : 'problems'} before testing`}
+        body="A draft with errors can’t start a conversation. Each problem links to the setting."
+      >
         <ul className="mt-4 w-full max-w-md divide-y divide-line rounded-lg border border-line text-left">
-          {validation.errors.map((e, i) =>
-        <li key={i} className="flex items-start justify-between gap-3 px-3 py-2.5">
+          {validation.errors.map((e, i) => (
+            <li key={i} className="flex items-start justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
                 {e.path && <p className="text-xs text-muted">{describePath(e.path, config)}</p>}
                 <p className="text-[13px] text-ink">{e.message}</p>
               </div>
-              {e.path &&
-          <Button size="sm" variant="secondary" onClick={() => onGoToField(e.path!)}>Fix</Button>
-          }
+              {e.path && (
+                <Button size="sm" variant="secondary" onClick={() => onGoToField(e.path!)}>
+                  Fix
+                </Button>
+              )}
             </li>
-        )}
+          ))}
         </ul>
-      </Blocker>;
-
+      </Blocker>
+    );
   } else if (!hasWebChannel) {
-    blocker =
-    <Blocker
-      icon={<PhoneIcon className="h-5 w-5 text-muted" aria-hidden />}
-      title="This agent is phone only"
-      body="Testing in Studio uses web chat or web voice. Turn one of them on under Where it is available — you can keep it off in production.">
-      
-        <Button variant="secondary" className="mt-4" onClick={() => navigate(`/agents/${editor.agent!.id}/build`)}>Go to Build</Button>
-      </Blocker>;
-
+    blocker = (
+      <Blocker
+        icon={<PhoneIcon className="h-5 w-5 text-muted" aria-hidden />}
+        title="This agent is phone only"
+        body="Testing in Studio uses web chat or web voice. Turn one of them on under Where it is available — you can keep it off in production."
+      >
+        <Button variant="secondary" className="mt-4" onClick={() => navigate(`/agents/${editor.agent!.id}/build`)}>
+          Go to Build
+        </Button>
+      </Blocker>
+    );
   }
 
-  const [activeTab, setActiveTab] = React.useState<'live' | 'scenarios'>('live');
+  const [activeTab, setActiveTab] = React.useState<'live' | 'readiness' | 'scenarios'>('live');
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
@@ -77,10 +74,11 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
           label="Test Mode"
           options={[
             { value: 'live', label: 'Live Conversation' },
-            { value: 'scenarios', label: 'Automated Scenarios (FR-18)' }
+            { value: 'readiness', label: 'Voice Readiness' },
+            { value: 'scenarios', label: 'Automated Scenarios' },
           ]}
           value={activeTab}
-          onChange={(v) => setActiveTab(v as 'live' | 'scenarios')}
+          onChange={(v) => setActiveTab(v as 'live' | 'readiness' | 'scenarios')}
         />
         <div className="flex items-center gap-2 text-xs text-muted">
           <span className="h-2 w-2 rounded-full bg-accent" />
@@ -91,17 +89,25 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
       {activeTab === 'live' ? (
         blocker ?? (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <TestConsole session={session} config={config} revision={editor.baseRevision} onBeforeStart={editor.flush} hasUnsaved={editor.status === 'unsaved'} />
+            <TestConsole
+              session={session}
+              config={config}
+              revision={editor.baseRevision}
+              onBeforeStart={editor.flush}
+              hasUnsaved={editor.status === 'unsaved'}
+            />
             <div className="lg:max-h-[640px]">
               <TracePanel trace={session.trace} />
             </div>
           </div>
         )
+      ) : activeTab === 'readiness' ? (
+        <VoiceReadinessPanel botId={editor.agent!.id} config={config} />
       ) : (
         <ScenariosRunner agentId={editor.agent!.id} />
       )}
-    </div>);
-
+    </div>
+  );
 }
 
 interface BlockerProps {
@@ -118,6 +124,6 @@ function Blocker({ icon, title, body, children }: BlockerProps) {
       <h2 className="mt-4 text-base font-semibold text-ink">{title}</h2>
       <p className="mt-1 max-w-md text-sm text-muted">{body}</p>
       {children}
-    </div>);
-
+    </div>
+  );
 }

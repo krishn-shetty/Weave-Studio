@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { AgentConfig, ChannelType, ToolDefinition } from '../../../types/studio';
 import type { DraftEditor } from '../../../hooks/useDraftEditor';
+import { getGreetingText, getInstructionsText } from '../../../utils/validate';
 import { Button } from '../../ui/Button';
 import { StatusChip } from '../../ui/StatusChip';
 import { cn } from '../../../utils/styles';
@@ -134,7 +135,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                     </div>
 
                     <p className="mt-2 text-xs text-muted line-clamp-2 italic">
-                      &ldquo;{ch.greeting}&rdquo;
+                      &ldquo;{getGreetingText(ch.greeting)}&rdquo;
                     </p>
 
                     <div className="mt-3 flex items-center justify-between border-t border-line/60 pt-2 text-[11px] text-muted">
@@ -207,7 +208,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                     <div>
                       <span className="font-semibold text-muted">Core Directives:</span>
                       <p className="mt-1 line-clamp-3 leading-relaxed text-muted font-sans">
-                        {entryAgent.instructions || 'Assist customer and route queries.'}
+                        {getInstructionsText(entryAgent.instructions) || 'Assist customer and route queries.'}
                       </p>
                     </div>
                     <div>

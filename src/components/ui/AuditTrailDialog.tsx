@@ -15,7 +15,9 @@ const actionMeta: Record<ActivityAction, { label: string; tone: 'accent' | 'neut
   published: { label: 'Published Version', tone: 'info' },
   deployed: { label: 'Deployed to Env', tone: 'success' },
   rolled_back: { label: 'Rolled Back', tone: 'warning' },
-  restored: { label: 'Restored Version', tone: 'danger' }
+  restored: { label: 'Restored Version', tone: 'danger' },
+  exported: { label: 'Exported', tone: 'neutral' },
+  imported: { label: 'Imported', tone: 'info' },
 };
 
 export function AuditTrailDialog({ open, onClose }: { open: boolean; onClose: () => void }) {

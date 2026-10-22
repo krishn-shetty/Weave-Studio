@@ -63,8 +63,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
-  }, [setTheme]);
+    setThemeState((prev) => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      localStorage.setItem('weave_theme', next);
+      return next;
+    });
+  }, []);
 
   const setDensity = useCallback((d: Density) => {
     setDensityState(d);

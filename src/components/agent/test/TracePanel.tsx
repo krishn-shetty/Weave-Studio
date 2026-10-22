@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { BotIcon, CircleAlertIcon, ClipboardListIcon, CpuIcon, PlugIcon, PowerIcon, RadioIcon, UsersIcon, BoxIcon } from "lucide-react";
 import { TraceEvent, TraceKind } from "../../../types/testConsole";
 import { cn, easeOut } from "../../../utils/styles";
-const icons: Record<TraceKind, BoxIcon> = {
+const icons: Record<TraceKind, typeof BoxIcon> = {
   session: RadioIcon,
   agent: BotIcon,
   llm: CpuIcon,

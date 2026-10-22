@@ -24,7 +24,7 @@ interface AppProps {
 export function App({ role = 'admin', simulateConflict = false, testBackend = 'simulated' }: AppProps) {
   return (
     <ThemeProvider>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider assignedRole={role}>
           <StudioProvider simulateConflict={simulateConflict} testBackend={testBackend}>
             <Routes>

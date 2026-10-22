@@ -12,9 +12,10 @@ export type EditorView = 'guided' | 'detailed' | 'canvas' | 'json';
 export interface AgentRole {
   id: string;
   name: string;
-  instructions: string;
+  instructions: string | { role?: string; text?: string; [key: string]: any };
   tools: string[];
-  handoffs: string[];
+  handoffs?: any[];
+  kind?: string;
 }
 
 export interface ToolDefinition {
@@ -28,7 +29,9 @@ export interface ChannelDefinition {
   id: string;
   type: ChannelType;
   enabled: boolean;
-  greeting: string;
+  greeting: string | { say?: string; text?: string; message?: string; [key: string]: any };
+  entry?: any;
+  modalities?: any;
 }
 
 export interface AgentConfig {

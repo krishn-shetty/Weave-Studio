@@ -8,19 +8,49 @@ type === 'web_chat' ? 'Web chat' : type === 'web_voice' ? 'Web voice' : 'Phone';
 
 const findProvider = (list: ProviderOption[], id: string | undefined) => list.find((p) => p.id === id);
 
+export function getGreetingText(greeting: unknown): string {
+  if (typeof greeting === 'string') return greeting;
+  if (greeting && typeof greeting === 'object') {
+    const g = greeting as Record<string, unknown>;
+    if (typeof g.say === 'string') return g.say;
+    if (typeof g.text === 'string') return g.text;
+    if (typeof g.message === 'string') return g.message;
+  }
+  return '';
+}
+
+export function getInstructionsText(instructions: unknown): string {
+  if (typeof instructions === 'string') return instructions;
+  if (instructions && typeof instructions === 'object') {
+    const ins = instructions as Record<string, unknown>;
+    if (typeof ins.role === 'string') return ins.role;
+    if (typeof ins.text === 'string') return ins.text;
+    if (typeof ins.system === 'string') return ins.system;
+  }
+  return '';
+}
+
 export function validateConfig(config: AgentConfig): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
   const secrets = new Set<string>();
 
   if (!config?.meta?.name?.trim()) errors.push({ path: ['meta', 'name'], message: 'Give the agent a name so your team can find it.' });
-  if (!/^\d+\.\d+\.\d+$/.test(config?.meta?.version ?? '')) errors.push({ path: ['meta', 'version'], message: 'The version must look like 1.2.3.' });
-  if (!config?.persona?.company?.trim()) errors.push({ path: ['persona', 'company'], message: 'Add the company name. The agent uses it to introduce itself.' });
+  if (config?.meta?.version && !/^\d+\.\d+\.\d+$/.test(config.meta.version)) {
+    errors.push({ path: ['meta', 'version'], message: 'The version must look like 1.2.3.' });
+  }
+  if (!config?.persona?.company?.trim()) {
+    // Only warn or skip if persona has a name
+    if (!config?.persona?.name?.trim()) {
+      errors.push({ path: ['persona', 'company'], message: 'Add the company or agent name.' });
+    }
+  }
 
   const channels = Array.isArray(config?.channels) ? config.channels : [];
   if (!channels.some((c) => c.enabled)) errors.push({ path: null, message: 'Turn on at least one channel, otherwise nobody can reach this agent.' });
   channels.forEach((c, i) => {
-    if (c.enabled && !c.greeting?.trim()) {
+    const text = getGreetingText(c.greeting);
+    if (c.enabled && !text.trim()) {
       errors.push({ path: ['channels', i, 'greeting'], message: `${channelLabel(c.type)} is on but has no greeting, so callers would hear silence.` });
     }
   });
@@ -31,7 +61,7 @@ export function validateConfig(config: AgentConfig): ValidationReport {
   Array.from(new Set(dupes)).forEach((id) => {
     errors.push({ path: null, message: `Two roles share the id '${id}'. Each role needs its own id.` });
   });
-  if (!ids.includes(config?.agents?.entry)) {
+  if (config?.agents?.entry && !ids.includes(config.agents.entry)) {
     errors.push({ path: ['agents', 'entry'], message: `'${config?.agents?.entry ?? ''}' is not one of this agent’s roles. Pick who answers first.` });
   }
 
@@ -45,7 +75,8 @@ export function validateConfig(config: AgentConfig): ValidationReport {
         errors.push({ path: ['agents', 'items', i, 'tools', j], message: `'${t}' is not a declared tool. Add it under What it can do, or remove it from ${a.name}.` });
       }
     });
-    if (!a.instructions?.trim()) {
+    const instrText = getInstructionsText(a.instructions);
+    if (!instrText.trim()) {
       warnings.push({ path: ['agents', 'items', i, 'instructions'], message: `${a.name} has no instructions, so it relies on the shared rules only.` });
     }
   });
@@ -55,29 +86,27 @@ export function validateConfig(config: AgentConfig): ValidationReport {
   });
 
   const llm = config?.defaults?.models?.llm;
-  const llmProvider = findProvider(llmProviders, llm?.provider);
-  if (!llmProvider) {
-    errors.push({ path: ['defaults', 'models', 'llm', 'provider'], message: `'${llm?.provider ?? ''}' is not a provider the runtime supports.` });
+  if (!llm?.provider) {
+    errors.push({ path: ['defaults', 'models', 'llm', 'provider'], message: 'Pick a supported language model provider.' });
   } else {
-    secrets.add(llmProvider.secret);
-    if (!llmProvider.models.some((m) => m.id === llm?.model)) {
-      errors.push({ path: ['defaults', 'models', 'llm', 'model'], message: `${llmProvider.label} has no model called '${llm?.model ?? ''}'.` });
+    const llmProvider = findProvider(llmProviders, llm.provider);
+    secrets.add(llmProvider?.secret || (llm.provider === 'openai' ? 'OPENAI_API_KEY' : `${llm.provider.toUpperCase()}_API_KEY`));
+    if (!llm.model?.trim()) {
+      errors.push({ path: ['defaults', 'models', 'llm', 'model'], message: 'Provide a model ID.' });
     }
   }
 
   const usesAudio = channels.some((c) => c.enabled && c.type !== 'web_chat');
   if (usesAudio) {
-    const stt = findProvider(sttProviders, config?.defaults?.models?.stt?.provider);
-    if (!stt) errors.push({ path: ['defaults', 'models', 'stt', 'provider'], message: 'Pick a supported speech recognition provider.' });else
-    secrets.add(stt.secret);
-    const tts = findProvider(ttsProviders, config?.defaults?.models?.tts?.provider);
-    if (!tts) {
-      errors.push({ path: ['defaults', 'models', 'tts', 'provider'], message: 'Pick a supported voice provider.' });
-    } else {
-      secrets.add(tts.secret);
-      if (!tts.models.some((m) => m.id === config.defaults.models.tts.voice)) {
-        errors.push({ path: ['defaults', 'models', 'tts', 'voice'], message: `${tts.label} has no voice called '${config.defaults.models.tts.voice}'.` });
-      }
+    const stt = config?.defaults?.models?.stt;
+    if (stt?.provider) {
+      const sttProvider = findProvider(sttProviders, stt.provider);
+      secrets.add(sttProvider?.secret || `${stt.provider.toUpperCase()}_API_KEY`);
+    }
+    const tts = config?.defaults?.models?.tts;
+    if (tts?.provider) {
+      const ttsProvider = findProvider(ttsProviders, tts.provider);
+      secrets.add(ttsProvider?.secret || (tts.provider === 'elevenlabs' ? 'ELEVEN_API_KEY' : `${tts.provider.toUpperCase()}_API_KEY`));
     }
   }
 

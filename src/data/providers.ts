@@ -75,6 +75,7 @@ export const ttsProviders: ProviderOption[] = [
 
 
 export const languages = [
+{ id: 'en', label: 'English' },
 { id: 'en-GB', label: 'English (UK)' },
 { id: 'en-US', label: 'English (US)' },
 { id: 'en-NG', label: 'English (Nigeria)' },

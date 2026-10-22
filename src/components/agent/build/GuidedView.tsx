@@ -12,7 +12,7 @@ import { Segmented } from '../../ui/Segmented';
 import { StatusChip } from '../../ui/StatusChip';
 import { languages, llmProviders, ttsProviders } from '../../../data/providers';
 import { fieldId } from '../../../utils/path';
-import { issuesAt } from '../../../utils/validate';
+import { getInstructionsText, issuesAt } from '../../../utils/validate';
 import { missingProviderKey } from '../../../utils/settingOptions';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
@@ -78,9 +78,16 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
             id={`${fieldId(['agents', 'items', entryIndex, 'instructions'])}-input`}
             rows={5}
             className={cn(inputClass, 'resize-y leading-relaxed')}
-            value={entry.instructions}
+            value={getInstructionsText(entry.instructions)}
             disabled={disabled}
-            onChange={(e) => update(['agents', 'items', entryIndex, 'instructions'], e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (typeof entry.instructions === 'object' && entry.instructions !== null) {
+                update(['agents', 'items', entryIndex, 'instructions'], { ...entry.instructions, role: val });
+              } else {
+                update(['agents', 'items', entryIndex, 'instructions'], { role: val });
+              }
+            }}
             placeholder="Help callers with bills and payments. Look up the account before answering anything specific." />
           
           </Field>
@@ -90,7 +97,10 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
       <GuidedSection id="g-voice" title="Voice and language" description="What callers hear on web voice and phone." onMore={() => onMore('talks')}>
         <Field id={fieldId('defaults.language')} label="Language">
           <select id={`${fieldId('defaults.language')}-input`} className={cn(inputClass, 'max-w-xs')} value={config.defaults.language} disabled={disabled} onChange={(e) => update(['defaults', 'language'], e.target.value)}>
-            {languages.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+            {!languages.some((l) => l.id === config.defaults?.language) && config.defaults?.language && (
+              <option key={`lang-${config.defaults.language}`} value={config.defaults.language}>{config.defaults.language}</option>
+            )}
+            {languages.map((l) => <option key={`lang-${l.id}`} value={l.id}>{l.label}</option>)}
           </select>
         </Field>
         <Field
@@ -241,13 +251,16 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
             <select
               id={`${fieldId('observability.retention_days')}-input`}
               className={cn(inputClass, 'max-w-xs')}
-              value={config.observability.retention_days}
+              value={config.observability?.retention_days ?? 90}
               disabled={disabled}
               onChange={(e) => update(['observability', 'retention_days'], Number(e.target.value))}>
               
-              {Array.from(new Set([7, 30, 90, 365, config.observability.retention_days])).sort((a, b) => a - b).map((d) =>
-              <option key={d} value={d}>{d} days</option>
-              )}
+              {Array.from(new Set([7, 30, 90, 365, config.observability?.retention_days ?? 90]))
+                .filter((d): d is number => typeof d === 'number' && !isNaN(d))
+                .sort((a, b) => a - b)
+                .map((d) => (
+                  <option key={`retention-${d}`} value={d}>{d} days</option>
+                ))}
             </select>
           </Field>
         </div>

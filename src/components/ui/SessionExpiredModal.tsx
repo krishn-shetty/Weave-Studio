@@ -17,10 +17,14 @@ export function SessionExpiredModal() {
     });
   };
 
+  const handleBlockedClose = () => {
+    // Block dismissal until re-authenticated
+  };
+
   return (
     <Dialog
       open={sessionExpired}
-      onClose={() => {}} // Block dismissal until authenticated
+      onClose={handleBlockedClose}
       title="Session Expired"
       description="Your company SSO session has timed out. Re-authenticate to continue."
       footer={

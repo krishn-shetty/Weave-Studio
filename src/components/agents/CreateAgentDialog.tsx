@@ -24,9 +24,10 @@ import { Segmented } from "../ui/Segmented";
 import { starters, StarterIcon } from "../../data/starters";
 import { useStudio } from "../../contexts/StudioContext";
 import { DraftProposal, generateAgentProposal } from "../../utils/aiDrafting";
+import { getGreetingText, getInstructionsText } from "../../utils/validate";
 import { cn, inputClass, inputErrorClass } from "../../utils/styles";
 
-const icons: Record<StarterIcon, BoxIcon> = {
+const icons: Record<StarterIcon, typeof BoxIcon> = {
   headset: HeadsetIcon,
   building: Building2Icon,
   book: BookOpenIcon,
@@ -99,20 +100,24 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
     if (!idTouched) setId(slugify(v));
   };
 
-  const handleCreateStarter = () => {
+  const handleCreateStarter = async () => {
     setSubmitted(true);
     if (problem || nameProblem || companyProblem) return;
-    createAgent({
-      id,
-      name: name.trim(),
-      company: company.trim(),
-      starterId
-    });
-    toast.success(`${name.trim()} created`, {
-      description: 'Draft saved and valid. Next: make it yours, then test it.'
-    });
-    onClose();
-    navigate(`/agents/${id}/build`);
+    try {
+      await createAgent({
+        id,
+        name: name.trim(),
+        company: company.trim(),
+        starterId
+      });
+      toast.success(`${name.trim()} created`, {
+        description: 'Draft saved and valid. Next: make it yours, then test it.'
+      });
+      onClose();
+      navigate(`/agents/${id}/build`);
+    } catch (err: any) {
+      toast.error('Could not create agent', { description: err?.message || 'Server rejected creation' });
+    }
   };
 
   const handleDraftWithAI = () => {
@@ -129,20 +134,24 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
     }, 600);
   };
 
-  const handleApplyProposal = () => {
+  const handleApplyProposal = async () => {
     if (!proposal) return;
-    createAgent({
-      id: proposal.id,
-      name: proposal.name,
-      company: proposal.company,
-      starterId: 'blank',
-      customConfig: proposal.config
-    });
-    toast.success(`${proposal.name} created from AI draft`, {
-      description: 'Valid draft created with 0 errors. You can fine-tune it in Build.'
-    });
-    onClose();
-    navigate(`/agents/${proposal.id}/build`);
+    try {
+      await createAgent({
+        id: proposal.id,
+        name: proposal.name,
+        company: proposal.company,
+        starterId: 'blank',
+        customConfig: proposal.config
+      });
+      toast.success(`${proposal.name} created from AI draft`, {
+        description: 'Valid draft created with 0 errors. You can fine-tune it in Build.'
+      });
+      onClose();
+      navigate(`/agents/${proposal.id}/build`);
+    } catch (err: any) {
+      toast.error('Could not create agent', { description: err?.message || 'Server rejected creation' });
+    }
   };
 
   const handleUndoProposal = () => {
@@ -382,14 +391,14 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
               </ul>
               <div className="mt-3 border-t border-line/60 pt-2.5 text-xs text-muted">
                 <span className="font-medium text-ink">Greeting: </span>
-                &ldquo;{proposal.config.channels[0].greeting}&rdquo;
+                &ldquo;{getGreetingText(proposal.config.channels[0].greeting)}&rdquo;
               </div>
             </div>
           </div>
 
           <div className="rounded-lg bg-subtle p-3 text-xs text-muted">
             <span className="font-semibold text-ink">Instructions preview: </span>
-            {proposal.config.agents.items[0].instructions.slice(0, 180)}…
+            {getInstructionsText(proposal.config.agents.items[0].instructions).slice(0, 180)}…
           </div>
         </div>
       ) : (

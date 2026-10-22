@@ -11,7 +11,6 @@ import { StatusChip } from '../ui/StatusChip';
 import { Dialog } from '../ui/Dialog';
 import { DeployDialog } from './release/DeployDialog';
 import { CompareDialog } from './release/CompareDialog';
-import { healthMetrics } from '../../data/healthMetrics';
 import { currentDeployments, draftChangeCount, environments, envLabel, pendingDeployment } from '../../utils/agentStatus';
 import { formatPercent, timeAgo } from '../../utils/format';
 
@@ -61,10 +60,7 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
   const current = currentDeployments(agent);
   const latest = agent.versions[0];
   const changes = draftChangeCount(agent);
-  const health = healthMetrics.find((h) => h.agentId === agent.id && h.environment === 'production' && h.period === 7);
-  const suggestRollback =
-  !!health && current.production?.version === health.current_version && health.current_version !== health.previous_version &&
-  health.current.handover_rate - health.previous.handover_rate >= 0.05;
+  const suggestRollback = false;
 
   const canDeployTo = (env: EnvironmentName) => env === 'production' ? can('deploy_production') : can('deploy');
   const rbDeployment = rollbackEnv ? current[rollbackEnv] : undefined;
@@ -114,15 +110,6 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
                   </div> :
 
                 <p className="mt-3 text-sm text-muted">Nothing deployed</p>
-                }
-                {env === 'production' && suggestRollback && !pending && health &&
-                <div className="mt-3 flex gap-2 rounded-md bg-warning-soft px-3 py-2 text-xs text-ink-soft">
-                    <TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
-                    <span>
-                      Handover rate rose from {formatPercent(health.previous.handover_rate)} to {formatPercent(health.current.handover_rate)} since {health.current_version}.{' '}
-                      <Link to={`/agents/${agent.id}/monitor`} className="font-medium text-ink underline">See health</Link>
-                    </span>
-                  </div>
                 }
                 <div className="mt-auto flex flex-wrap gap-2 pt-4">
                   <Button size="sm" variant="secondary" disabled={!allowed || !latest || !!pending} onClick={() => setDeployTarget({ env })}>

@@ -3,7 +3,7 @@ import { XIcon } from 'lucide-react';
 import type { AgentConfig, Issue, Path } from '../../../types/studio';
 import { StatusChip } from '../../ui/StatusChip';
 import { fieldId } from '../../../utils/path';
-import { issuesAt } from '../../../utils/validate';
+import { getInstructionsText, issuesAt } from '../../../utils/validate';
 import { cn, inputClass } from '../../../utils/styles';
 
 interface AgentRolesEditorProps {
@@ -44,9 +44,16 @@ export function AgentRolesEditor({ config, errors, warnings, disabled, technical
                   id={`${fieldId([...base, 'instructions'])}-input`}
                   rows={4}
                   className={cn(inputClass, 'mt-1.5 resize-y leading-relaxed')}
-                  value={role.instructions}
+                  value={getInstructionsText(role.instructions)}
                   disabled={disabled}
-                  onChange={(e) => update([...base, 'instructions'], e.target.value)} />
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (typeof role.instructions === 'object' && role.instructions !== null) {
+                      update([...base, 'instructions'], { ...role.instructions, role: val });
+                    } else {
+                      update([...base, 'instructions'], { role: val });
+                    }
+                  }} />
                 
                 {instrWarning && <p className="mt-1.5 text-[13px] text-warning">{instrWarning}</p>}
               </div>

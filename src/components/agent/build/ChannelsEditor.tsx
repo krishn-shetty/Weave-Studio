@@ -3,7 +3,7 @@ import type { AgentConfig, ChannelType, Issue, Path } from '../../../types/studi
 import { Toggle } from '../../ui/Toggle';
 import { StatusChip } from '../../ui/StatusChip';
 import { fieldId } from '../../../utils/path';
-import { channelLabel, issuesAt } from '../../../utils/validate';
+import { channelLabel, getGreetingText, issuesAt } from '../../../utils/validate';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
 interface ChannelsEditorProps {
@@ -46,9 +46,16 @@ export function ChannelsEditor({ config, errors, disabled, technical, update }: 
                 <textarea
                 id={`${fieldId(greetingPath)}-input`}
                 rows={2}
-                value={ch.greeting}
+                value={getGreetingText(ch.greeting)}
                 disabled={disabled}
-                onChange={(e) => update(greetingPath, e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (typeof ch.greeting === 'object' && ch.greeting !== null) {
+                    update(greetingPath, { ...ch.greeting, say: val });
+                  } else {
+                    update(greetingPath, { say: val });
+                  }
+                }}
                 className={cn(inputClass, 'mt-1.5 resize-y', error && inputErrorClass)} />
               
                 {error && <p className="mt-1.5 text-[13px] text-danger" role="alert">{error}</p>}
