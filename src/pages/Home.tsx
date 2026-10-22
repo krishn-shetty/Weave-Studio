@@ -24,7 +24,7 @@ const actionVerb = { created: 'created', saved: 'saved', published: 'published',
 
 export function Home() {
   const { agents, activity } = useStudio();
-  const { user, can } = useAuth();
+  const { can } = useAuth();
   const navigate = useNavigate();
   const [createOpen, setCreateOpen] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -48,16 +48,11 @@ export function Home() {
   );
   const step = focus ? nextStep(focus) : null;
   const stageIndex = step ? stages.findIndex((s) => s.id === step.stage) : 0;
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink">
-            {greeting}, {user?.name.split(' ')[0]}
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Overview</h1>
           {!showChecklist && (
             <button
               type="button"
