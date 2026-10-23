@@ -31,7 +31,7 @@ export function AccordionContent({ className, children }: AccordionContentProps)
               opacity: { duration: 0.1 },
             },
           }}
-          className="overflow-hidden"
+          className="overflow-hidden rounded-b-[11px]"
         >
           <div
             className={cn(

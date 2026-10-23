@@ -17,6 +17,8 @@
   --muted: 102 112 133;
   --line: 228 231 236;
   --line-strong: 208 213 221;
+  --border: rgb(228 231 236);
+  --border-strong: rgb(208 213 221);
   --primary: 114 48 143;
   --primary-strong: 97 41 122;
   --primary-soft: 245 235 250;
@@ -45,6 +47,8 @@
   --muted: 148 163 184;
   --line: 51 65 85;
   --line-strong: 71 85 105;
+  --border: rgb(51 65 85);
+  --border-strong: rgb(71 85 105);
   --primary: 196 155 237;
   --primary-strong: 219 187 248;
   --primary-soft: 76 29 105;
@@ -61,6 +65,10 @@
   --danger-soft: 127 29 29;
   --info: 96 165 250;
   --info-soft: 30 58 138;
+}
+
+html {
+  scroll-padding-top: 4.5rem;
 }
 
 html,

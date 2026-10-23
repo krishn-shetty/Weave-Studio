@@ -10,6 +10,7 @@ import {
   ExternalLinkIcon,
   EyeIcon,
   FileCodeIcon,
+  GripVerticalIcon,
   LayersIcon,
   ListIcon,
   PinIcon,
@@ -25,6 +26,8 @@ import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
+import { Badge } from '../components/ui/Badge';
+import { TruncatedText } from '../components/ui/TruncatedText';
 import { Segmented } from '../components/ui/Segmented';
 import { Tooltip } from '../components/ui/Tooltip';
 import { toast } from '../components/ui/Toast';
@@ -176,6 +179,10 @@ export function Agents() {
     }
   };
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+  }, []);
+
   const handleReorder = (newItems: typeof visible) => {
     const previousOrder = [...customOrder];
     const newVisibleIds = newItems.map((item) => item.agent.id);
@@ -191,8 +198,8 @@ export function Agents() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10 scroll-mt-20">
+      <div className="flex flex-wrap items-end justify-between gap-4 scroll-mt-20">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-ink">Agents</h1>
           <p className="mt-1 text-sm text-muted">{agents.length} agents in Northwind workspace</p>
@@ -400,7 +407,7 @@ export function Agents() {
         </div>
       ) : (
         /* Uniform Accordion Experience */
-        <div className="mt-5">
+        <div className="mt-5 p-1">
           <Accordion
             items={visible}
             getId={(item) => item.agent.id}
@@ -408,6 +415,70 @@ export function Agents() {
             onReorderById={handleReorderById}
             enableReordering={true}
             enableDragAndDrop={true}
+            renderOverlay={(item) => (
+              <div
+                className={cn(
+                  'grid grid-cols-[24px_40px_minmax(0,1fr)_auto_auto] gap-x-4 items-center px-5 py-4 min-h-[76px]',
+                  'select-none bg-surface rounded-[12px] relative'
+                )}
+              >
+                {!item.report.valid && (
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
+                    aria-hidden="true"
+                  />
+                )}
+                {/* 1. Grip */}
+                <div className="flex items-center justify-center w-6 shrink-0 text-accent">
+                  <GripVerticalIcon className="h-4 w-4" />
+                </div>
+                {/* 2. Icon */}
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-subtle text-accent">
+                  <BotIcon className="h-5 w-5" />
+                </div>
+                {/* 3. MAIN */}
+                <div className="min-w-0 flex flex-col justify-center">
+                  <div className="text-[15px] font-semibold text-ink leading-snug truncate">
+                    {item.agent.name}
+                  </div>
+                  <div className="text-[13px] text-muted leading-snug mt-0.5 truncate">
+                    <span className="font-mono text-ink-soft">{item.agent.id}</span>
+                    {' · saved '}
+                    {timeAgo(item.agent.draft.saved_at)}
+                    {' by '}
+                    {item.agent.draft.saved_by}
+                  </div>
+                </div>
+                {/* 4. STATUS */}
+                <div className="flex items-center justify-end gap-2 shrink-0">
+                  {item.changes > 0 && (
+                    <Badge variant="neutral" className="h-6">
+                      {item.changes} unpublished
+                    </Badge>
+                  )}
+                  <div className="w-[96px] min-w-[96px] flex justify-center">
+                    <Badge
+                      variant={item.report.valid ? 'success' : 'danger'}
+                      dot
+                      className="w-full justify-center h-6"
+                    >
+                      {item.report.valid
+                        ? 'Valid'
+                        : `${item.report.errors.length} ${item.report.errors.length === 1 ? 'problem' : 'problems'}`}
+                    </Badge>
+                  </div>
+                  <div className="w-[100px] min-w-[100px] flex justify-center">
+                    <Badge variant="outline" mono className="w-full justify-center h-6">
+                      {item.latest ? item.latest.version : 'Unpublished'}
+                    </Badge>
+                  </div>
+                </div>
+                {/* 5. ACTIONS */}
+                <div className="flex items-center justify-end gap-2 text-muted">
+                  <ChevronDownIcon className="h-4 w-4" />
+                </div>
+              </div>
+            )}
             pagination={{
               page: safePage,
               pageSize,
@@ -428,37 +499,59 @@ export function Agents() {
                   index={idx}
                   isFirst={isFirst}
                   isLast={isLast}
+                  hasProblem={!report.valid}
                 >
                   <AccordionHeader
                     id={agent.id}
-                    icon={<BotIcon className="h-4 w-4 text-accent" />}
-                    title={agent.name}
-                    subtitle={
-                      <span>
-                        <code className="font-mono text-xs">{agent.id}</code> · saved {timeAgo(agent.draft.saved_at)} by {agent.draft.saved_by}
-                      </span>
+                    icon={<BotIcon className="h-5 w-5 text-accent" />}
+                    hasProblem={!report.valid}
+                    title={
+                      <TruncatedText
+                        text={agent.name}
+                        className="text-[15px] font-semibold text-ink leading-snug"
+                      >
+                        {agent.name}
+                      </TruncatedText>
                     }
-                    badge={
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {report.valid ? (
-                          <StatusChip tone="success" dot>Valid</StatusChip>
-                        ) : (
-                          <StatusChip tone="danger" dot>
-                            {report.errors.length} {report.errors.length === 1 ? 'problem' : 'problems'}
-                          </StatusChip>
+                    subtitle={
+                      <TruncatedText
+                        text={`${agent.id} · saved ${timeAgo(agent.draft.saved_at)} by ${agent.draft.saved_by}`}
+                        className="text-[13px] text-muted leading-snug"
+                      >
+                        <span className="font-mono text-ink-soft">{agent.id}</span>
+                        {' · saved '}
+                        {timeAgo(agent.draft.saved_at)}
+                        {' by '}
+                        {agent.draft.saved_by}
+                      </TruncatedText>
+                    }
+                    status={
+                      <>
+                        {changes > 0 && (
+                          <Badge variant="neutral" className="h-6">
+                            {changes} unpublished
+                          </Badge>
                         )}
-                        {changes > 0 && <StatusChip>{changes} unpublished</StatusChip>}
-                        {latest ? (
-                          <span className="rounded bg-subtle px-1.5 py-0.5 font-mono text-[11px] font-medium text-ink">
-                            {latest.version}
-                          </span>
-                        ) : (
-                          <span className="text-muted text-[11px]">Unpublished</span>
-                        )}
-                      </div>
+                        <div className="w-[96px] min-w-[96px] flex justify-center">
+                          <Badge
+                            variant={report.valid ? 'success' : 'danger'}
+                            dot
+                            className="w-full justify-center h-6"
+                          >
+                            {report.valid
+                              ? 'Valid'
+                              : `${report.errors.length} ${report.errors.length === 1 ? 'problem' : 'problems'}`}
+                          </Badge>
+                        </div>
+                        <div className="w-[100px] min-w-[100px] flex justify-center">
+                          <Badge variant="outline" mono className="w-full justify-center h-6">
+                            {latest ? latest.version : 'Unpublished'}
+                          </Badge>
+                        </div>
+                      </>
                     }
                     actions={
-                      <div className="flex items-center gap-1.5">
+                      <>
                         <Tooltip content={isPinned ? 'Unpin agent' : 'Pin to top of list'} position="top">
                           <button
                             type="button"
@@ -467,17 +560,19 @@ export function Agents() {
                               togglePinAgent(agent.id);
                             }}
                             className={cn(
-                              'p-1.5 rounded transition-colors',
-                              isPinned ? 'text-accent hover:text-accent/80' : 'text-muted/50 hover:text-muted hover:bg-subtle'
+                              'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                              isPinned
+                                ? 'text-accent hover:text-accent/80 hover:bg-accent-soft/30'
+                                : 'text-muted/60 hover:text-ink hover:bg-subtle'
                             )}
                             aria-label={isPinned ? 'Unpin agent' : 'Pin agent'}
                           >
-                            <PinIcon className={cn('h-3.5 w-3.5', isPinned && 'fill-accent')} />
+                            <PinIcon className={cn('h-4 w-4', isPinned && 'fill-accent')} />
                           </button>
                         </Tooltip>
 
                         <WorkspaceAction agentId={agent.id} agentName={agent.name} />
-                      </div>
+                      </>
                     }
                   />
 
@@ -640,7 +735,7 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
       className="relative inline-flex items-center"
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="inline-flex items-stretch rounded-lg border border-accent/30 bg-accent-soft/25 p-0.5 shadow-xs transition-colors hover:border-accent/50 hover:bg-accent-soft/40 focus-within:ring-2 focus-within:ring-accent/40">
+      <div className="inline-flex h-8 items-stretch rounded-lg border border-accent/30 bg-accent-soft/25 p-0.5 shadow-xs transition-colors hover:border-accent/50 hover:bg-accent-soft/40 focus-within:ring-2 focus-within:ring-accent/40">
         <Tooltip content="Open workspace builder" position="top">
           <button
             type="button"
@@ -648,7 +743,7 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
               e.stopPropagation();
               navigate(`/agents/${agentId}`);
             }}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold text-accent dark:text-accent-strong transition-colors hover:bg-accent hover:text-white dark:hover:bg-accent dark:hover:text-white focus-visible:outline-none"
+            className="flex h-full items-center gap-1.5 rounded-md px-2.5 text-xs font-semibold text-accent dark:text-accent-strong transition-colors hover:bg-accent hover:text-white dark:hover:bg-accent dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={`Open ${agentName} workspace`}
           >
             <ExternalLinkIcon className="h-3.5 w-3.5" />
@@ -667,7 +762,7 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
             }}
             aria-expanded={isOpen}
             aria-haspopup="menu"
-            className="flex items-center justify-center rounded-md px-1.5 py-1 text-accent dark:text-accent-strong transition-colors hover:bg-accent hover:text-white dark:hover:bg-accent dark:hover:text-white focus-visible:outline-none"
+            className="flex h-full w-7 items-center justify-center rounded-md text-accent dark:text-accent-strong transition-colors hover:bg-accent hover:text-white dark:hover:bg-accent dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="Toggle workspace stages menu"
           >
             <ChevronDownIcon className={cn('h-3 w-3 transition-transform duration-150', isOpen && 'rotate-180')} />

@@ -8,14 +8,9 @@ export interface AccordionContextType {
   collapseAll: () => void;
   enableReordering: boolean;
   enableDragAndDrop: boolean;
+  activeId: string | null;
   onReorderById?: (sourceId: string, targetId: string, position: 'top' | 'bottom') => void;
   onKeyboardReorder?: (id: string, direction: 'up' | 'down') => void;
-  draggedId: string | null;
-  setDraggedId: (id: string | null) => void;
-  dragOverId: string | null;
-  setDragOverId: (id: string | null) => void;
-  dragPosition: 'top' | 'bottom' | null;
-  setDragPosition: (pos: 'top' | 'bottom' | null) => void;
 }
 
 const AccordionContext = createContext<AccordionContextType | null>(null);
@@ -35,11 +30,11 @@ export interface AccordionItemContextType {
   isLast: boolean;
   isExpanded: boolean;
   toggle: () => void;
-  canDrag: boolean;
-  setCanDrag: (can: boolean) => void;
   isDragging: boolean;
-  isDragOver: boolean;
-  dragPosition: 'top' | 'bottom' | null;
+  dragHandleProps?: {
+    ref?: (element: HTMLElement | null) => void;
+    [key: string]: any;
+  };
   onKeyboardMove: (direction: 'up' | 'down') => void;
 }
 

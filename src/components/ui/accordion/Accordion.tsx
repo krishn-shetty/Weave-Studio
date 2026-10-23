@@ -1,4 +1,22 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragStartEvent,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { AccordionContext } from './AccordionContext';
 import { AccordionPagination } from './AccordionPagination';
 import { cn } from '../../../utils/styles';
@@ -15,18 +33,16 @@ export function Accordion<T = any>({
   onExpandedChange,
   enableReordering = true,
   enableDragAndDrop = true,
+  renderOverlay,
   pagination,
   className,
   children,
 }: AccordionProps<T>) {
   const [internalExpandedIds, setInternalExpandedIds] = useState<string[]>(defaultExpandedIds);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const isControlled = controlledExpandedIds !== undefined;
   const expandedIds = isControlled ? controlledExpandedIds : internalExpandedIds;
-
-  const [draggedId, setDraggedId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
-  const [dragPosition, setDragPosition] = useState<'top' | 'bottom' | null>(null);
 
   const setExpanded = useCallback(
     (newIds: string[]) => {
@@ -81,6 +97,56 @@ export function Accordion<T = any>({
     [getId]
   );
 
+  const itemIds = useMemo(() => {
+    if (!items) return [];
+    return items.map((it, idx) => defaultGetId(it, idx));
+  }, [items, defaultGetId]);
+
+  const activeItem = useMemo(() => {
+    if (!activeId || !items) return null;
+    return items.find((it, idx) => defaultGetId(it, idx) === activeId) ?? null;
+  }, [activeId, items, defaultGetId]);
+
+  // Pointer sensor with activation constraint distance 5; Keyboard sensor for arrow navigation
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over || active.id === over.id || !items) return;
+
+    const oldIndex = items.findIndex((it, idx) => defaultGetId(it, idx) === active.id);
+    const newIndex = items.findIndex((it, idx) => defaultGetId(it, idx) === over.id);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const reordered = arrayMove(items, oldIndex, newIndex);
+      onReorder?.(reordered);
+      onReorderById?.(
+        String(active.id),
+        String(over.id),
+        newIndex > oldIndex ? 'bottom' : 'top'
+      );
+    }
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+  };
+
   const handleReorderById = useCallback(
     (sourceId: string, targetId: string, position: 'top' | 'bottom') => {
       if (sourceId === targetId) return;
@@ -122,14 +188,17 @@ export function Accordion<T = any>({
       const targetId = defaultGetId(items[targetIdx], targetIdx);
       if (onReorderById) {
         onReorderById(id, targetId, direction === 'up' ? 'top' : 'bottom');
-      } else if (onReorder) {
-        const next = [...items];
-        const [moved] = next.splice(currentIdx, 1);
-        next.splice(targetIdx, 0, moved);
+      }
+      if (onReorder) {
+        const next = arrayMove(items, currentIdx, targetIdx);
         onReorder(next);
       }
     },
     [defaultGetId, items, onReorder, onReorderById]
+  );
+
+  const isDndEnabled = Boolean(
+    enableDragAndDrop && enableReordering && (onReorder || onReorderById) && items && items.length > 0
   );
 
   const contextValue = useMemo(
@@ -140,15 +209,10 @@ export function Accordion<T = any>({
       expandAll,
       collapseAll,
       enableReordering: Boolean(enableReordering && (onReorder || onReorderById)),
-      enableDragAndDrop: Boolean(enableDragAndDrop && enableReordering && (onReorder || onReorderById)),
+      enableDragAndDrop: isDndEnabled,
+      activeId,
       onReorderById: handleReorderById,
       onKeyboardReorder: handleKeyboardReorder,
-      draggedId,
-      setDraggedId,
-      dragOverId,
-      setDragOverId,
-      dragPosition,
-      setDragPosition,
     }),
     [
       expandedIds,
@@ -157,26 +221,69 @@ export function Accordion<T = any>({
       expandAll,
       collapseAll,
       enableReordering,
-      enableDragAndDrop,
+      isDndEnabled,
+      activeId,
       onReorder,
       onReorderById,
       handleReorderById,
       handleKeyboardReorder,
-      draggedId,
-      dragOverId,
-      dragPosition,
     ]
+  );
+
+  const listContent = (
+    <div className={cn('w-full space-y-3 p-1', className)}>
+      {children}
+
+      {pagination && pagination.totalItems > 0 && (
+        <AccordionPagination {...pagination} />
+      )}
+    </div>
   );
 
   return (
     <AccordionContext.Provider value={contextValue}>
-      <div className={cn('w-full space-y-3', className)}>
-        {children}
+      {isDndEnabled ? (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis]}
+          onDragStart={handleDragStart}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+            {listContent}
+          </SortableContext>
 
-        {pagination && pagination.totalItems > 0 && (
-          <AccordionPagination {...pagination} />
-        )}
-      </div>
+          <DragOverlay
+            modifiers={[restrictToVerticalAxis]}
+            dropAnimation={{
+              duration: 160,
+              easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+            }}
+          >
+            {activeItem ? (
+              <div
+                style={{
+                  borderRadius: '12px',
+                  border: '2px solid var(--accent, rgb(114, 48, 143))',
+                }}
+                className="bg-surface shadow-2xl ring-4 ring-accent/20 cursor-grabbing z-[9999] opacity-100 overflow-hidden"
+              >
+                {renderOverlay ? (
+                  renderOverlay(activeItem)
+                ) : (
+                  <div className="flex min-h-[64px] items-center px-5 py-3 text-ink font-semibold">
+                    {defaultGetId(activeItem, 0)}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      ) : (
+        listContent
+      )}
     </AccordionContext.Provider>
   );
 }

@@ -138,7 +138,6 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
                         </div>
                       }
                       showDragHandle={false}
-                      showMoveControls={false}
                     />
                     <AccordionContent>
                       <div className="space-y-5">

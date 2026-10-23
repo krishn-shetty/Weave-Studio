@@ -20,6 +20,7 @@ export interface AccordionProps<T = any> {
   onExpandedChange?: (ids: string[]) => void;
   enableReordering?: boolean;
   enableDragAndDrop?: boolean;
+  renderOverlay?: (item: T) => React.ReactNode;
   pagination?: AccordionPaginationConfig;
   className?: string;
   children?: React.ReactNode;
@@ -31,6 +32,7 @@ export interface AccordionItemProps {
   isFirst?: boolean;
   isLast?: boolean;
   disabled?: boolean;
+  hasProblem?: boolean;
   className?: string;
   children?: React.ReactNode;
 }
@@ -40,15 +42,14 @@ export interface AccordionHeaderProps {
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   badge?: React.ReactNode;
+  status?: React.ReactNode;
   icon?: React.ReactNode;
   actions?: React.ReactNode;
   showDragHandle?: boolean;
-  showMoveControls?: boolean;
   tooltipText?: string;
+  hasProblem?: boolean;
   isFirst?: boolean;
   isLast?: boolean;
-  onMoveUp?: () => void;
-  onMoveDown?: () => void;
   className?: string;
   children?: React.ReactNode;
 }

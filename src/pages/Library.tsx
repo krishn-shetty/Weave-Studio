@@ -658,7 +658,9 @@ export function Library() {
               page: 1,
               pageSize: 5,
               totalItems: demoNumbers.length,
-              onPageChange: () => {},
+              onPageChange: (_page) => {
+                // no-op
+              },
               pageSizeOptions: [3, 5, 10],
             }}
           >

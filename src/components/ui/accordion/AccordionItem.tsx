@@ -1,4 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { AccordionItemContext, useAccordion } from './AccordionContext';
 import { cn } from '../../../utils/styles';
 import type { AccordionItemProps } from './types';
@@ -9,6 +11,7 @@ export function AccordionItem({
   isFirst = false,
   isLast = false,
   disabled = false,
+  hasProblem = false,
   className,
   children,
 }: AccordionItemProps) {
@@ -16,23 +19,27 @@ export function AccordionItem({
     isExpanded,
     toggleExpand,
     enableDragAndDrop,
-    onReorderById,
     onKeyboardReorder,
-    draggedId,
-    setDraggedId,
-    dragOverId,
-    setDragOverId,
-    dragPosition,
-    setDragPosition,
+    activeId,
   } = useAccordion();
 
-  const itemRef = useRef<HTMLDivElement>(null);
-  const [canDrag, setCanDrag] = useState(false);
-  const justDraggedRef = useRef(false);
   const expanded = isExpanded(id);
 
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id,
+    disabled: !enableDragAndDrop,
+  });
+
   const handleToggle = () => {
-    if (disabled || justDraggedRef.current) return;
+    if (disabled || isDragging || activeId) return;
     toggleExpand(id);
   };
 
@@ -40,75 +47,14 @@ export function AccordionItem({
     onKeyboardReorder?.(id, direction);
   };
 
-  // Drag and drop handlers using stable IDs
-  const handleDragStart = (e: React.DragEvent) => {
-    if (!enableDragAndDrop) return;
-    justDraggedRef.current = true;
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', id);
-    setDraggedId(id);
+  const isCurrentActive = activeId === id;
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    borderRadius: '12px',
+    border: '1px solid var(--border)',
   };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    if (!enableDragAndDrop || !draggedId || draggedId === id) {
-      return;
-    }
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-
-    if (itemRef.current) {
-      const rect = itemRef.current.getBoundingClientRect();
-      const midpoint = rect.top + rect.height / 2;
-      const pos = e.clientY < midpoint ? 'top' : 'bottom';
-      setDragOverId(id);
-      setDragPosition(pos);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!itemRef.current?.contains(e.relatedTarget as Node)) {
-      if (dragOverId === id) {
-        setDragOverId(null);
-        setDragPosition(null);
-      }
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    if (!enableDragAndDrop || !draggedId || draggedId === id) {
-      return;
-    }
-    e.preventDefault();
-    const pos = dragPosition || 'bottom';
-    onReorderById?.(draggedId, id, pos);
-
-    setDraggedId(null);
-    setDragOverId(null);
-    setDragPosition(null);
-    setCanDrag(false);
-
-    // Prevent immediate click toggle
-    justDraggedRef.current = true;
-    window.setTimeout(() => {
-      justDraggedRef.current = false;
-    }, 150);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedId(null);
-    setDragOverId(null);
-    setDragPosition(null);
-    setCanDrag(false);
-
-    justDraggedRef.current = true;
-    window.setTimeout(() => {
-      justDraggedRef.current = false;
-    }, 150);
-  };
-
-  const isBeingDragged = draggedId === id;
-  const isTargetTop = dragOverId === id && dragPosition === 'top';
-  const isTargetBottom = dragOverId === id && dragPosition === 'bottom';
 
   return (
     <AccordionItemContext.Provider
@@ -119,41 +65,40 @@ export function AccordionItem({
         isLast,
         isExpanded: expanded,
         toggle: handleToggle,
-        canDrag,
-        setCanDrag,
-        isDragging: isBeingDragged,
-        isDragOver: dragOverId === id,
-        dragPosition,
+        isDragging: isCurrentActive || isDragging,
+        dragHandleProps: enableDragAndDrop
+          ? {
+              ref: setActivatorNodeRef,
+              ...attributes,
+              ...listeners,
+            }
+          : undefined,
         onKeyboardMove: handleKeyboardMove,
       }}
     >
       <div
-        ref={itemRef}
-        draggable={enableDragAndDrop && canDrag}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onDragEnd={handleDragEnd}
+        ref={setNodeRef}
+        style={style}
         className={cn(
-          'relative rounded-xl border border-line bg-surface shadow-panel transition-all duration-150',
-          isBeingDragged && 'bg-accent-soft/20 border-accent/60 shadow-md ring-2 ring-accent/30 opacity-70 scale-[0.995]',
-          !isBeingDragged && 'hover:border-line-strong',
-          expanded && 'border-line-strong/80',
+          'relative rounded-[12px] bg-surface transition-all duration-150',
+          // Border and subtle shadow
+          'shadow-sm',
+          // Hover and focus states
+          !isCurrentActive && 'hover:border-[var(--border-strong)] hover:shadow-md',
+          expanded && 'border-[var(--border-strong)] shadow-sm',
+          'focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent',
+          // Placeholder state while lifted card is in DragOverlay
+          isCurrentActive && 'opacity-40 border-dashed border-accent/60 bg-subtle/30 pointer-events-none select-none',
           className
         )}
       >
-        {/* Top Drop Indicator Bar */}
-        {isTargetTop && (
-          <div className="pointer-events-none absolute -top-1 left-1 right-1 h-1.5 bg-accent rounded-full z-40 shadow-sm animate-pulse" />
+        {hasProblem && (
+          <div
+            className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
+            aria-hidden="true"
+          />
         )}
-
         {children}
-
-        {/* Bottom Drop Indicator Bar */}
-        {isTargetBottom && (
-          <div className="pointer-events-none absolute -bottom-1 left-1 right-1 h-1.5 bg-accent rounded-full z-40 shadow-sm animate-pulse" />
-        )}
       </div>
     </AccordionItemContext.Provider>
   );

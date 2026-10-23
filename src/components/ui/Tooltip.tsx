@@ -39,8 +39,8 @@ export function Tooltip({
 
     let activePos = position;
 
-    // Flip if near viewport edge
-    if (activePos === 'top' && triggerRect.top - tooltipHeight - offset < 8) {
+    // Flip if near top bar or viewport edge
+    if (activePos === 'top' && triggerRect.top - tooltipHeight - offset < 64) {
       activePos = 'bottom';
     } else if (activePos === 'bottom' && triggerRect.bottom + tooltipHeight + offset > window.innerHeight - 8) {
       activePos = 'top';
@@ -76,6 +76,12 @@ export function Tooltip({
 
     setCoords({ top: targetTop, left: targetLeft });
   };
+
+  useEffect(() => {
+    if (disabled && isVisible) {
+      setIsVisible(false);
+    }
+  }, [disabled, isVisible]);
 
   const showTooltip = () => {
     if (disabled || !content) return;
@@ -127,6 +133,7 @@ export function Tooltip({
       onMouseLeave={hideTooltip}
       onFocus={showTooltip}
       onBlur={hideTooltip}
+      onPointerDown={hideTooltip}
     >
       {children}
       {typeof document !== 'undefined' &&
