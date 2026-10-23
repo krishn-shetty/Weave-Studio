@@ -16,6 +16,9 @@ import { Library } from './pages/Library';
 import { Settings } from './pages/Settings';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
+import { BreadcrumbProvider } from './contexts/BreadcrumbContext';
+import { Analytics } from './pages/Analytics';
+
 interface AppProps {
   role?: 'admin' | 'editor' | 'viewer';
   simulateConflict?: boolean;
@@ -28,24 +31,28 @@ export function App({ role = 'admin', simulateConflict = false, testBackend = 's
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider assignedRole={role}>
           <StudioProvider simulateConflict={simulateConflict} testBackend={testBackend}>
-            <ToastProvider position="top-right">
-              <ErrorBoundary fallbackTitle="An application error occurred">
-                <Routes>
-                  <Route path="/signin" element={<SignIn />} />
-                  <Route element={<AppShell />}>
-                    <Route index element={<Home />} />
-                    <Route path="agents" element={<Agents />} />
-                    <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
-                    <Route path="knowledge" element={<Knowledge />} />
-                    <Route path="calls" element={<Calls />} />
-                    <Route path="calls/:callId" element={<CallDetail />} />
-                    <Route path="library" element={<Library />} />
-                    <Route path="settings" element={<Settings />} />
-                    <Route path="*" element={<Navigate to="/" replace />} />
-                  </Route>
-                </Routes>
-              </ErrorBoundary>
-            </ToastProvider>
+            <BreadcrumbProvider>
+              <ToastProvider position="top-right">
+                <ErrorBoundary fallbackTitle="An application error occurred">
+                  <Routes>
+                    <Route path="/signin" element={<SignIn />} />
+                    <Route element={<AppShell />}>
+                      <Route index element={<Home />} />
+                      <Route path="agents" element={<Agents />} />
+                      <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
+                      <Route path="knowledge" element={<Knowledge />} />
+                      <Route path="calls" element={<Calls />} />
+                      <Route path="calls/:callId" element={<CallDetail />} />
+                      <Route path="library" element={<Library />} />
+                      <Route path="settings" element={<Settings />} />
+                      <Route path="analytics" element={<Analytics />} />
+                      <Route path="analytics/*" element={<Analytics />} />
+                      <Route path="*" element={<Navigate to="/" replace />} />
+                    </Route>
+                  </Routes>
+                </ErrorBoundary>
+              </ToastProvider>
+            </BreadcrumbProvider>
           </StudioProvider>
         </AuthProvider>
       </BrowserRouter>

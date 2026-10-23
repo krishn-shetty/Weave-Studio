@@ -9,6 +9,7 @@ import { CommandPalette } from '../ui/CommandPalette';
 import { CreateAgentDialog } from '../agents/CreateAgentDialog';
 import { SessionExpiredModal } from '../ui/SessionExpiredModal';
 import { HelpShortcutsModal } from '../ui/HelpShortcutsModal';
+import { Breadcrumbs } from './Breadcrumbs';
 
 export function AppShell() {
   const { user } = useAuth();
@@ -72,8 +73,13 @@ export function AppShell() {
           </div>
         )}
 
-        <main className="min-w-0 flex-1">
-          <Outlet />
+        <main className="min-w-0 flex-1 flex flex-col">
+          <div className="border-b border-line/60 bg-surface/50 backdrop-blur-xs px-4 py-2.5 sm:px-6 lg:px-10">
+            <Breadcrumbs />
+          </div>
+          <div className="flex-1">
+            <Outlet />
+          </div>
         </main>
       </div>
 

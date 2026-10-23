@@ -60,6 +60,7 @@ body,
 #root {
   height: 100%;
 }
+
 body {
   background: rgb(var(--canvas));
   color: rgb(var(--ink));
@@ -85,6 +86,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   *,
   *::before,
   *::after {

@@ -11,6 +11,7 @@ import { channelName, outcomeMeta } from '../components/calls/CallsTable';
 import { formatDateTime, formatDuration, formatOffset } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
 import { api } from '../api/client';
+import { useSetBreadcrumbTitle } from '../contexts/BreadcrumbContext';
 import type { CallRecord, ToolCallRecord, TranscriptLine } from '../types/studio';
 
 type TimelineItem =
@@ -25,6 +26,8 @@ export function CallDetail() {
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useSetBreadcrumbTitle(call ? `${call.caller} (${call.id.slice(0, 10)})` : null);
 
   // Find which agent this call belongs to
   const agentId = useMemo(() => {
@@ -56,8 +59,8 @@ export function CallDetail() {
             ? 'handed_over'
             : 'resolved'
           : c.status === 'unfinished'
-          ? 'cut_off'
-          : 'abandoned';
+            ? 'cut_off'
+            : 'abandoned';
 
         const lines: TranscriptLine[] = (transcriptRes.turns || []).map((t: any, idx: number) => ({
           speaker: t.role === 'agent' || t.role === 'assistant' ? 'agent' : 'caller',
@@ -172,14 +175,7 @@ export function CallDetail() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
-      <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-[13px] text-muted">
-        <Link to="/calls" className="hover:text-ink hover:underline">
-          Calls
-        </Link>
-        <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
-        <span className="font-mono text-xs">{call.id}</span>
-      </nav>
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-ink">{call.caller}</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-soft">{call.summary}</p>

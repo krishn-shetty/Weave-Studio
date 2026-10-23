@@ -30,11 +30,10 @@ export function HelpShortcutsModal({ open, onClose }: HelpShortcutsModalProps) {
           <button
             type="button"
             onClick={() => setTab('shortcuts')}
-            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${
-              tab === 'shortcuts'
+            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${tab === 'shortcuts'
                 ? 'border-accent text-accent font-semibold'
                 : 'border-transparent text-muted hover:text-ink'
-            }`}
+              }`}
           >
             <KeyboardIcon className="h-3.5 w-3.5" />
             Keyboard shortcuts
@@ -42,11 +41,10 @@ export function HelpShortcutsModal({ open, onClose }: HelpShortcutsModalProps) {
           <button
             type="button"
             onClick={() => setTab('whatsnew')}
-            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${
-              tab === 'whatsnew'
+            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${tab === 'whatsnew'
                 ? 'border-accent text-accent font-semibold'
                 : 'border-transparent text-muted hover:text-ink'
-            }`}
+              }`}
           >
             <SparklesIcon className="h-3.5 w-3.5" />
             What’s new in v2.0
@@ -54,11 +52,10 @@ export function HelpShortcutsModal({ open, onClose }: HelpShortcutsModalProps) {
           <button
             type="button"
             onClick={() => setTab('docs')}
-            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${
-              tab === 'docs'
+            className={`pb-2 transition-colors border-b-2 flex items-center gap-1.5 ${tab === 'docs'
                 ? 'border-accent text-accent font-semibold'
                 : 'border-transparent text-muted hover:text-ink'
-            }`}
+              }`}
           >
             <BookOpenIcon className="h-3.5 w-3.5" />
             Guides & Runbooks

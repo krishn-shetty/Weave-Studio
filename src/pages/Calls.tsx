@@ -56,8 +56,8 @@ export function Calls() {
                 ? 'handed_over'
                 : 'resolved'
               : c.status === 'unfinished'
-              ? 'cut_off'
-              : 'abandoned';
+                ? 'cut_off'
+                : 'abandoned';
 
             combined.push({
               id: c.id,

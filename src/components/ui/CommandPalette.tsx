@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  BarChart3Icon,
   BookOpenIcon,
   BotIcon,
   CheckIcon,
@@ -96,6 +97,17 @@ export function CommandPalette({ open, onClose, onOpenCreate }: CommandPalettePr
         icon: BotIcon,
         perform: () => {
           navigate('/agents');
+          onClose();
+        }
+      },
+      {
+        id: 'nav-analytics',
+        category: 'Navigation',
+        title: 'Analytics & Reports',
+        subtitle: 'Conversational metrics, resolution rates, latency, and Q4 reports',
+        icon: BarChart3Icon,
+        perform: () => {
+          navigate('/analytics');
           onClose();
         }
       },
