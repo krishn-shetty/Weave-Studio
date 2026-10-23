@@ -11,7 +11,6 @@ export interface BreadcrumbItem {
   path: string;
   isCurrent: boolean;
 }
-
 export interface BreadcrumbsProps {
   /**
    * The visual separator between breadcrumb items.
@@ -253,7 +252,7 @@ export function Breadcrumbs({
   let visibleFirst: BreadcrumbItem | null = null;
   let collapsedMiddle: BreadcrumbItem[] = [];
   let visibleLast: BreadcrumbItem | null = null;
-  let itemsToRender: BreadcrumbItem[] = trail;
+  const itemsToRender: BreadcrumbItem[] = trail;
 
   if (shouldCollapse) {
     visibleFirst = trail[0];

@@ -1,27 +1,19 @@
 import React from 'react';
 import { BracesIcon } from 'lucide-react';
-import type { AgentConfig, Path, ToolType } from '../../../types/studio';
+import type { AgentConfig, Path } from '../../../types/studio';
 import { StatusChip } from '../../ui/StatusChip';
 import { Button } from '../../ui/Button';
 import { connectionSecrets } from '../../../data/providers';
 import { fieldId } from '../../../utils/path';
 import { inputClass } from '../../../utils/styles';
+import { toolTypeLabel } from './toolTypes';
 
 interface ToolsEditorProps {
-  config: AgentConfig;
-  disabled: boolean;
-  update: (path: Path, value: unknown) => void;
-  onOpenJson: () => void;
+  readonly config: AgentConfig;
+  readonly disabled: boolean;
+  readonly update: (path: Path, value: unknown) => void;
+  readonly onOpenJson: () => void;
 }
-
-export const toolTypeLabel: Record<ToolType, string> = {
-  http: 'Calls an API',
-  end_call: 'Ends the call',
-  transfer: 'Transfers to a person',
-  knowledge_search: 'Searches documents',
-  send_sms: 'Sends a text',
-  mcp: 'MCP server'
-};
 
 export function ToolsEditor({ config, disabled, update, onOpenJson }: ToolsEditorProps) {
   return (

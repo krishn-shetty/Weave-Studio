@@ -5,7 +5,7 @@ import type { SettingGroupId } from '../../../data/settingsCatalog';
 import type { Path, Tone } from '../../../types/studio';
 import { GuidedSection } from './GuidedSection';
 import { ChannelsEditor } from './ChannelsEditor';
-import { toolTypeLabel } from './ToolsEditor';
+import { toolTypeLabel } from './toolTypes';
 import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { Segmented } from '../../ui/Segmented';

@@ -222,6 +222,7 @@ export interface CallDetailTurn {
   role: 'agent' | 'caller' | 'system' | 'user' | 'assistant';
   text: string;
   at?: number;
+  elapsed_s?: number;
 }
 
 export interface CallTranscriptResponse {

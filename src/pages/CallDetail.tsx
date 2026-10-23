@@ -1,25 +1,122 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ChevronRightIcon, DownloadIcon, FlaskConicalIcon, RefreshCwIcon, SparklesIcon } from 'lucide-react';
-import { toast } from '../components/ui/Toast';
-import { useStudio } from '../contexts/StudioContext';
-import { StatusChip } from '../components/ui/StatusChip';
-import { Button } from '../components/ui/Button';
-import { Dialog } from '../components/ui/Dialog';
-import { AiAssistantModal } from '../components/ui/AiAssistantModal';
-import { channelName, outcomeMeta } from '../components/calls/CallsTable';
-import { formatDateTime, formatDuration, formatOffset } from '../utils/format';
-import { cn, inputClass } from '../utils/styles';
-import { api } from '../api/client';
-import { useSetBreadcrumbTitle } from '../contexts/BreadcrumbContext';
-import type { CallRecord, ToolCallRecord, TranscriptLine } from '../types/studio';
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeftIcon,
+  DownloadIcon,
+  FlaskConicalIcon,
+  RefreshCwIcon,
+  SparklesIcon,
+} from "lucide-react";
+import { toast } from "../components/ui/Toast";
+import { useStudio } from "../contexts/StudioContext";
+import { StatusChip } from "../components/ui/StatusChip";
+import { Button } from "../components/ui/Button";
+import { Dialog } from "../components/ui/Dialog";
+import { AiAssistantModal } from "../components/ui/AiAssistantModal";
+import { channelName, outcomeMeta } from "../components/calls/CallsTable";
+import { formatDateTime, formatDuration, formatOffset } from "../utils/format";
+import { cn, inputClass } from "../utils/styles";
+import { api } from "../api/client";
+import { useSetBreadcrumbTitle } from "../contexts/BreadcrumbContext";
+import type {
+  CallRecord,
+  ToolCallRecord,
+  TranscriptLine,
+} from "../types/studio";
+import type { CallTranscriptResponse } from "../api/types";
+
+function getCallOutcome(status: string, handoffs: number): CallRecord["outcome"] {
+  if (status === "ended") return handoffs > 0 ? "handed_over" : "resolved";
+  return status === "unfinished" ? "cut_off" : "abandoned";
+}
+
+function getChannelValue(channel: CallTranscriptResponse["call"]["channel"]): string {
+  return typeof channel === "object" && channel !== null
+    ? channel.type || ""
+    : channel || "";
+}
+
+function mapTranscript(response: CallTranscriptResponse): TranscriptLine[] {
+  return response.turns.map((turn, index) => ({
+    speaker: turn.role === "agent" || turn.role === "assistant" ? "agent" : "caller",
+    text: turn.text,
+    at_s: Math.round(turn.elapsed_s ?? turn.at ?? index * 4),
+  }));
+}
+
+function normalizeEnvironment(ref?: string): CallRecord["environment"] {
+  if (ref === "draft") return "test";
+  if (ref === "development" || ref === "staging" || ref === "production") return ref;
+  return "development";
+}
+
+function mapCall(response: CallTranscriptResponse, agentId: string, lines: TranscriptLine[]): CallRecord {
+  const { call } = response;
+  const channelType = getChannelValue(call.channel);
+  const channelId = typeof call.channel === "object" && call.channel !== null
+    ? call.channel.id || ""
+    : String(call.channel || "");
+  let channel: CallRecord["channel"] = "web_voice";
+  if (channelType === "web_chat") channel = "web_chat";
+  else if (channelType === "sip_voice") channel = "phone";
+
+  return {
+    id: call.id,
+    agentId: call.bot || agentId,
+    channel,
+    environment: normalizeEnvironment(call.ref),
+    version: call.version || "draft",
+    started_at: call.started_at,
+    duration_s: call.duration_s || 0,
+    outcome: getCallOutcome(call.status, call.handoffs || 0),
+    caller: call.caller || "Anonymous visitor",
+    summary: `Call in ${channelId || "channel"} · ${call.duration_s || 0}s (${lines.length} turns)`,
+    transcript: lines,
+    tool_calls: [],
+    errors: [],
+  };
+}
 
 type TimelineItem =
-  | { type: 'line'; at: number; line: TranscriptLine }
-  | { type: 'tool'; at: number; tool: ToolCallRecord };
+  | { type: "line"; at: number; line: TranscriptLine }
+  | { type: "tool"; at: number; tool: ToolCallRecord };
+
+async function getCallRecord(
+  agentId: string,
+  callId: string,
+  signal: AbortSignal,
+): Promise<CallRecord | null> {
+  const transcript = await api.getTranscript(agentId, callId, { signal }).catch((error: unknown) => {
+    if (signal.aborted) throw error;
+    return null;
+  });
+  if (transcript?.call) return mapCall(transcript, agentId, mapTranscript(transcript));
+
+  const callData = await api.getCall(agentId, callId, {}, { signal }).catch((error: unknown) => {
+    if (signal.aborted) throw error;
+    return null;
+  });
+  if (!callData) return null;
+  return {
+    id: callId,
+    agentId,
+    channel: "web_voice",
+    environment: "test",
+    version: "draft",
+    started_at: new Date().toISOString(),
+    duration_s: 0,
+    outcome: "resolved",
+    caller: "Visitor",
+    summary: "Call details",
+    transcript: [],
+    tool_calls: [],
+    errors: [],
+  };
+}
 
 export function CallDetail() {
   const { callId } = useParams();
+  const navigate = useNavigate();
   const { agents } = useStudio();
 
   const [call, setCall] = useState<CallRecord | null>(null);
@@ -27,125 +124,108 @@ export function CallDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useSetBreadcrumbTitle(call ? `${call.caller} (${call.id.slice(0, 10)})` : null);
+  useSetBreadcrumbTitle(
+    call ? `${call.caller} (${call.id.slice(0, 10)})` : null,
+  );
 
   // Find which agent this call belongs to
   const agentId = useMemo(() => {
-    if (!callId) return 'voice-test';
+    if (!callId) return "voice-test";
     // Room format: test-<botId>-<hex>_<timestamp>
-    const match = callId.match(/^(?:test|session)-([a-z0-9_-]+)-/);
-    if (match && match[1]) {
+    const match = /^(?:test|session)-([a-z0-9_-]+)-/.exec(callId);
+    if (match?.[1]) {
       const found = agents.find((a) => a.id === match[1]);
       if (found) return found.id;
       return match[1];
     }
-    return agents[0]?.id || 'voice-test';
+    return agents[0]?.id || "voice-test";
   }, [callId, agents]);
 
-  const loadCallData = async () => {
-    if (!callId) return;
+  useEffect(() => {
+    if (!callId) {
+      setError("Call record not found on the server.");
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setCall(null);
+    setTranscriptLines([]);
     setLoading(true);
     setError(null);
-    try {
-      // 1. Fetch transcript from real API
-      const transcriptRes = await api.getTranscript(agentId, callId).catch(() => null);
 
-      if (transcriptRes && transcriptRes.call) {
-        const c = transcriptRes.call;
-        const isEnded = c.status === 'ended';
-        const handoffs = c.handoffs || 0;
-        const callOutcome = isEnded
-          ? handoffs > 0
-            ? 'handed_over'
-            : 'resolved'
-          : c.status === 'unfinished'
-            ? 'cut_off'
-            : 'abandoned';
-
-        const lines: TranscriptLine[] = (transcriptRes.turns || []).map((t: any, idx: number) => ({
-          speaker: t.role === 'agent' || t.role === 'assistant' ? 'agent' : 'caller',
-          text: t.text,
-          at_s: typeof t.elapsed_s === 'number' ? Math.round(t.elapsed_s) : idx * 4,
-        }));
-
-        setTranscriptLines(lines);
-
-        const chType = typeof c.channel === 'object' && c.channel !== null ? (c.channel.type || '') : String(c.channel || '');
-        const chId = typeof c.channel === 'object' && c.channel !== null ? (c.channel.id || '') : String(c.channel || '');
-
-        setCall({
-          id: c.id,
-          agentId: c.bot || agentId,
-          channel: chType === 'web_chat' ? 'web_chat' : chType === 'sip_voice' ? 'phone' : 'web_voice',
-          environment: c.ref === 'draft' ? 'test' : ((c.ref || 'development') as any),
-          version: c.version || 'draft',
-          started_at: c.started_at,
-          duration_s: c.duration_s || 0,
-          outcome: callOutcome,
-          caller: c.caller || 'Anonymous visitor',
-          summary: `Call in ${chId || 'channel'} · ${c.duration_s || 0}s (${lines.length} turns)`,
-          transcript: lines,
-          tool_calls: [],
-          errors: [],
-        });
-      } else {
-        // Fallback: try getCall
-        const callData = await api.getCall(agentId, callId).catch(() => null);
-        if (callData) {
-          setCall({
-            id: callId,
-            agentId,
-            channel: 'web_voice',
-            environment: 'test',
-            version: 'draft',
-            started_at: new Date().toISOString(),
-            duration_s: 0,
-            outcome: 'resolved',
-            caller: 'Visitor',
-            summary: 'Call details',
-            transcript: [],
-            tool_calls: [],
-            errors: [],
-          });
+    const loadCallData = async () => {
+      try {
+        const record = await getCallRecord(agentId, callId, controller.signal);
+        if (!active) return;
+        if (record) {
+          setCall(record);
+          setTranscriptLines(record.transcript);
         } else {
-          setError('Call record not found on the server.');
+          setError("Call record not found on the server.");
         }
+      } catch (err: unknown) {
+        if (active && !controller.signal.aborted)
+          setError(err instanceof Error ? err.message : "Could not fetch call record.");
+      } finally {
+        if (active) setLoading(false);
       }
-    } catch (err: any) {
-      setError(err?.message || 'Could not fetch call record.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
 
-  useEffect(() => {
-    loadCallData();
+    void loadCallData();
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [callId, agentId]);
 
   const timeline = useMemo<TimelineItem[]>(() => {
     if (!call) return [];
     const items: TimelineItem[] = [
-      ...transcriptLines.map((line) => ({ type: 'line' as const, at: line.at_s, line })),
-      ...call.tool_calls.filter((t) => t.kind === 'tool').map((tool) => ({ type: 'tool' as const, at: tool.at_s, tool })),
+      ...transcriptLines.map((line) => ({
+        type: "line" as const,
+        at: line.at_s,
+        line,
+      })),
+      ...call.tool_calls
+        .filter((t) => t.kind === "tool")
+        .map((tool) => ({ type: "tool" as const, at: tool.at_s, tool })),
     ];
 
-    return items.sort((a, b) => a.at - b.at || (a.type === 'line' ? -1 : 1));
+    return items.sort((a, b) => a.at - b.at || (a.type === "line" ? -1 : 1));
   }, [call, transcriptLines]);
 
   const agent = agents.find((a) => a.id === (call?.agentId || agentId));
-  const envText = call
-    ? call.environment === 'test'
-      ? 'Test conversation'
-      : call.environment.charAt(0).toUpperCase() + call.environment.slice(1)
-    : '';
+  let envText = "";
+  if (call) {
+    envText = call.environment === "test"
+      ? "Test conversation"
+      : call.environment.charAt(0).toUpperCase() + call.environment.slice(1);
+  }
 
   const [scenarioOpen, setScenarioOpen] = useState(false);
-  const [scenarioName, setScenarioName] = useState(call ? `Scenario from call ${call.id} (${call.caller})` : '');
+  const [scenarioName, setScenarioName] = useState(
+    call ? `Scenario from call ${call.id} (${call.caller})` : "",
+  );
   const [aiOpen, setAiOpen] = useState(false);
+
+  useEffect(() => {
+    if (call) setScenarioName(`Scenario from call ${call.id} (${call.caller})`);
+  }, [call]);
+
+  const handleBack = () => {
+    const historyIndex = (window.history.state as { idx?: number } | null)?.idx;
+    if (typeof historyIndex === "number" && historyIndex > 0) {
+      navigate(-1);
+    } else {
+      navigate("/calls", { replace: true });
+    }
+  };
 
   const handleSaveScenario = () => {
     setScenarioOpen(false);
-    toast.success(`Scenario saved to ${agent?.name ?? 'Agent'}`, {
+    toast.success(`Scenario saved to ${agent?.name ?? "Agent"}`, {
       description: `Captured ${transcriptLines.length} turns for repeatable testing.`,
     });
   };
@@ -154,7 +234,9 @@ export function CallDetail() {
     return (
       <div className="mx-auto max-w-lg px-6 py-24 text-center">
         <RefreshCwIcon className="mx-auto h-6 w-6 animate-spin text-muted" />
-        <h1 className="mt-4 text-base font-semibold text-ink">Loading call details…</h1>
+        <h1 className="mt-4 text-base font-semibold text-ink">
+          Loading call details…
+        </h1>
       </div>
     );
   }
@@ -163,8 +245,13 @@ export function CallDetail() {
     return (
       <div className="mx-auto max-w-lg px-6 py-24 text-center">
         <h1 className="text-lg font-semibold text-ink">Call not found</h1>
-        <p className="mt-1 text-sm text-muted">{error || 'Could not find this call record on the server.'}</p>
-        <Link to="/calls" className="mt-4 inline-block text-sm font-medium text-accent hover:underline">
+        <p className="mt-1 text-sm text-muted">
+          {error || "Could not find this call record on the server."}
+        </p>
+        <Link
+          to="/calls"
+          className="mt-4 inline-block text-sm font-medium text-accent hover:underline"
+        >
           Back to calls
         </Link>
       </div>
@@ -175,12 +262,24 @@ export function CallDetail() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
+      <button
+        type="button"
+        onClick={handleBack}
+        className="mb-5 inline-flex items-center gap-1.5 text-sm font-medium text-muted hover:text-ink"
+      >
+        <ArrowLeftIcon className="h-4 w-4" />
+        Back
+      </button>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-ink">{call.caller}</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">
+            {call.caller}
+          </h1>
           <p className="mt-1 max-w-2xl text-sm text-ink-soft">{call.summary}</p>
           <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-muted">
-            <StatusChip tone={outcomeMeta[call.outcome].tone}>{outcomeMeta[call.outcome].label}</StatusChip>
+            <StatusChip tone={outcomeMeta[call.outcome].tone}>
+              {outcomeMeta[call.outcome].label}
+            </StatusChip>
             <span>{formatDateTime(call.started_at)}</span>
             <span>{formatDuration(call.duration_s)}</span>
             <span>{channelName[call.channel]}</span>
@@ -188,7 +287,10 @@ export function CallDetail() {
               {envText} · <span className="font-mono">{call.version}</span>
             </span>
             {agent && (
-              <Link to={`/agents/${agent.id}`} className="font-medium text-accent hover:underline">
+              <Link
+                to={`/agents/${agent.id}`}
+                className="font-medium text-accent hover:underline"
+              >
                 {agent.name}
               </Link>
             )}
@@ -239,16 +341,20 @@ export function CallDetail() {
         }
       >
         <p className="text-sm text-muted">
-          Freeze this caller’s exact words and check that your agent produces the expected responses on every future release.
+          Freeze this caller’s exact words and check that your agent produces
+          the expected responses on every future release.
         </p>
         <div className="mt-4">
-          <label htmlFor="scenario-name" className="block text-xs font-medium text-ink-soft">
+          <label
+            htmlFor="scenario-name"
+            className="block text-xs font-medium text-ink-soft"
+          >
             Scenario title
           </label>
           <input
             id="scenario-name"
             type="text"
-            className={cn(inputClass, 'mt-1.5')}
+            className={cn(inputClass, "mt-1.5")}
             value={scenarioName}
             onChange={(e) => setScenarioName(e.target.value)}
           />
@@ -259,8 +365,10 @@ export function CallDetail() {
         open={aiOpen}
         onClose={() => setAiOpen(false)}
         context={{
-          mode: 'summarise_call',
-          callTranscript: transcriptLines.map((t) => `${t.speaker}: ${t.text}`).join('\n'),
+          mode: "summarise_call",
+          callTranscript: transcriptLines
+            .map((t) => `${t.speaker}: ${t.text}`)
+            .join("\n"),
         }}
       />
 
@@ -275,27 +383,37 @@ export function CallDetail() {
             </div>
           ) : (
             <ol className="mt-4 space-y-4">
-              {timeline.map((item, idx) => {
-                if (item.type === 'line') {
-                  const isAgent = item.line.speaker === 'agent';
+              {timeline.map((item) => {
+                if (item.type === "line") {
+                  const isAgent = item.line.speaker === "agent";
                   return (
-                    <li key={`line-${idx}`} className={cn('flex gap-3', isAgent ? 'justify-start' : 'justify-end')}>
+                    <li
+                      key={`${item.line.at_s}-${item.line.speaker}-${item.line.text}`}
+                      className={cn(
+                        "flex gap-3",
+                        isAgent ? "justify-start" : "justify-end",
+                      )}
+                    >
                       {isAgent && (
                         <div
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent"
                           aria-hidden
                         >
-                          {(agent?.name || 'A').slice(0, 1)}
+                          {(agent?.name || "A").slice(0, 1)}
                         </div>
                       )}
                       <div
                         className={cn(
-                          'max-w-[80%] rounded-xl px-4 py-2.5 text-sm',
-                          isAgent ? 'border border-line bg-surface text-ink' : 'bg-accent text-accent-contrast'
+                          "max-w-[80%] rounded-xl px-4 py-2.5 text-sm",
+                          isAgent
+                            ? "border border-line bg-surface text-ink"
+                            : "bg-accent text-accent-contrast",
                         )}
                       >
                         <div className="flex items-center justify-between gap-3 text-xs opacity-70">
-                          <span className="font-medium">{isAgent ? agent?.name || 'Agent' : call.caller}</span>
+                          <span className="font-medium">
+                            {isAgent ? agent?.name || "Agent" : call.caller}
+                          </span>
                           <span>{formatOffset(item.at)}</span>
                         </div>
                         <p className="mt-1 leading-relaxed">{item.line.text}</p>
@@ -317,15 +435,21 @@ export function CallDetail() {
             <dl className="mt-4 space-y-3 text-xs">
               <div>
                 <dt className="text-muted">Room / ID</dt>
-                <dd className="mt-0.5 font-mono text-ink break-all">{call.id}</dd>
+                <dd className="mt-0.5 font-mono text-ink break-all">
+                  {call.id}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted">Started</dt>
-                <dd className="mt-0.5 text-ink">{formatDateTime(call.started_at)}</dd>
+                <dd className="mt-0.5 text-ink">
+                  {formatDateTime(call.started_at)}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted">Duration</dt>
-                <dd className="mt-0.5 text-ink">{formatDuration(call.duration_s)}</dd>
+                <dd className="mt-0.5 text-ink">
+                  {formatDuration(call.duration_s)}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted">Channel</dt>

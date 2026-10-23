@@ -29,7 +29,7 @@ import type {
 } from './types';
 import { toServerConfig } from '../utils/configFactory';
 
-const BASE = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) || '/api';
+const BASE = (import.meta as ImportMeta & { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || '/api';
 
 let currentUser = '';
 export const setApiUser = (name: string) => {
@@ -51,7 +51,7 @@ export class ApiError extends Error {
   status: number;
   kind: ApiErrorKind;
   errors: ValidationIssue[];
-  body: any;
+  body: unknown;
 
   constructor({
     status,
@@ -64,7 +64,7 @@ export class ApiError extends Error {
     kind: ApiErrorKind;
     message: string;
     errors?: ValidationIssue[];
-    body?: any;
+    body?: unknown;
   }) {
     super(message);
     this.name = 'ApiError';
@@ -75,18 +75,24 @@ export class ApiError extends Error {
   }
 }
 
-export function classify(status: number, body: any): { kind: ApiErrorKind; message: string; errors: ValidationIssue[] } {
-  const detail = body && typeof body === 'object' ? body.detail : undefined;
+export function classify(status: number, body: unknown): { kind: ApiErrorKind; message: string; errors: ValidationIssue[] } {
+  const responseBody = isRecord(body) ? body : undefined;
+  const detail = responseBody?.detail;
 
   if (status >= 500 && detail === undefined) {
     return { kind: 'network', message: 'The Agent Builder API is not responding.', errors: [] };
   }
   if (status === 422 && Array.isArray(detail)) {
-    const where = detail.map((item: any) => `${(item.loc || []).join('.')}: ${item.msg}`).join('; ');
+    const where = detail.map((item: unknown) => {
+      if (!isRecord(item)) return String(item);
+      const location = Array.isArray(item.loc) ? item.loc.join('.') : '';
+      const message = typeof item.msg === 'string' ? item.msg : 'Invalid request';
+      return `${location}: ${message}`;
+    }).join('; ');
     return { kind: 'client_bug', message: `Malformed request (${where}).`, errors: [] };
   }
   const message = typeof detail === 'string' ? detail : `Request failed (${status}).`;
-  if (status === 422) return { kind: 'invalid', message, errors: Array.isArray(body?.errors) ? body.errors : [] };
+  if (status === 422) return { kind: 'invalid', message, errors: Array.isArray(responseBody?.errors) ? responseBody.errors as ValidationIssue[] : [] };
   if (status === 401) return { kind: 'auth', message, errors: [] };
   if (status === 404) return { kind: 'not_found', message, errors: [] };
   if (status === 409) return { kind: 'conflict', message, errors: [] };
@@ -94,22 +100,22 @@ export function classify(status: number, body: any): { kind: ApiErrorKind; messa
   return { kind: 'server', message, errors: [] };
 }
 
-async function request<T = any>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T = unknown>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   try {
     return await send<T>(method, path, options);
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Retry once for idempotent GET network failures
-    if (method !== 'GET' || error?.kind !== 'network' || options.signal?.aborted) throw error;
+    if (method !== 'GET' || !(error instanceof ApiError) || error.kind !== 'network' || options.signal?.aborted) throw error;
     await new Promise((resolve) => setTimeout(resolve, 250));
     if (options.signal?.aborted) throw error;
     return send<T>(method, path, options);
   }
 }
 
-async function send<T = any>(method: string, path: string, { body, signal, raw, headers: extraHeaders }: RequestOptions = {}): Promise<T> {
+async function send<T = unknown>(method: string, path: string, { body, signal, raw, headers: extraHeaders }: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    ...(extraHeaders || {}),
+    ...extraHeaders,
   };
 
   if (body !== undefined && raw === undefined) {
@@ -119,16 +125,23 @@ async function send<T = any>(method: string, path: string, { body, signal, raw, 
     headers['X-User'] = currentUser;
   }
 
+  let requestBody: BodyInit | null | undefined;
+  if (raw !== undefined) {
+    requestBody = raw;
+  } else if (body !== undefined) {
+    requestBody = JSON.stringify(body);
+  }
+
   let response: Response;
   try {
     response = await fetch(`${BASE}${path}`, {
       method,
       headers,
       signal,
-      body: raw !== undefined ? (raw as any) : body === undefined ? undefined : JSON.stringify(body),
+      body: requestBody,
     });
-  } catch (error: any) {
-    if (error?.name === 'AbortError') throw error;
+  } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
     throw new ApiError({
       status: 0,
       kind: 'network',
@@ -137,7 +150,7 @@ async function send<T = any>(method: string, path: string, { body, signal, raw, 
   }
 
   const text = await response.text();
-  let data: any = null;
+  let data: unknown = null;
   if (text) {
     try {
       data = JSON.parse(text);
@@ -156,9 +169,13 @@ async function send<T = any>(method: string, path: string, { body, signal, raw, 
 
 const enc = encodeURIComponent;
 
-function queryOf(values: Record<string, any>): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function queryOf(values: Record<string, unknown>): string {
   const query = new URLSearchParams();
-  Object.entries(values || {}).forEach(([key, value]) => {
+  Object.entries(values).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') {
       query.set(key, String(value));
     }
@@ -172,7 +189,7 @@ export const api = {
   health: (opts?: RequestOptions): Promise<{ ok: boolean }> => request('GET', '/health', opts),
 
   // 2. Schema
-  schema: (opts?: RequestOptions): Promise<Record<string, any>> => request('GET', '/schema', opts),
+  schema: (opts?: RequestOptions): Promise<Record<string, unknown>> => request('GET', '/schema', opts),
 
   // 3. Environments
   environments: (opts?: RequestOptions): Promise<string[]> => request('GET', '/environments', opts),
@@ -250,50 +267,54 @@ export const api = {
     }),
 
   // 19. Preview prompt
-  previewPrompt: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
-    request('POST', '/preview/prompt', {
-      ...opts,
-      body: body && body.config ? { ...body, config: toServerConfig(body.config) } : body,
-    }),
+  previewPrompt: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> => {
+    const config = body.config;
+    const requestBody = config && isRecord(config) ? { ...body, config: toServerConfig(config as AgentConfig) } : body;
+    return request('POST', '/preview/prompt', { ...opts, body: requestBody });
+  },
 
   // 20. Preview tool result
-  previewResult: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  previewResult: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', '/preview/result', { ...opts, body }),
 
   // 21. Knowledge bases
-  getKnowledge: (id: string, query?: { ref?: string }, opts?: RequestOptions): Promise<{ bases: KnowledgeBase[] } | KnowledgeBase[]> =>
-    request('GET', `/bots/${enc(id)}/knowledge${query?.ref ? `?ref=${enc(query.ref)}` : ''}`, opts),
+  getKnowledge: (id: string, query?: { ref?: string }, opts?: RequestOptions): Promise<{ bases: KnowledgeBase[] } | KnowledgeBase[]> => {
+    const queryString = query?.ref ? `?ref=${enc(query.ref)}` : '';
+    return request('GET', `/bots/${enc(id)}/knowledge${queryString}`, opts);
+  },
 
   // 22. Knowledge files
   listKnowledgeFiles: (id: string, opts?: RequestOptions): Promise<KnowledgeFile[]> =>
     request('GET', `/bots/${enc(id)}/knowledge/files`, opts),
 
   // 23. Upload knowledge file (raw file)
-  uploadKnowledgeFile: (id: string, name: string, file: Blob | string | File, opts?: RequestOptions): Promise<any> =>
+  uploadKnowledgeFile: (id: string, name: string, file: Blob | string | File, opts?: RequestOptions): Promise<unknown> =>
     request('PUT', `/bots/${enc(id)}/knowledge/files/${enc(name)}`, { ...opts, raw: file }),
 
   // 24. Delete knowledge file
-  deleteKnowledgeFile: (id: string, name: string, force?: boolean, opts?: RequestOptions): Promise<any> =>
+  deleteKnowledgeFile: (id: string, name: string, force?: boolean, opts?: RequestOptions): Promise<unknown> =>
     request('DELETE', `/bots/${enc(id)}/knowledge/files/${enc(name)}${force ? '?force=true' : ''}`, opts),
 
   // 25. Build knowledge base
-  buildKnowledge: (id: string, base: string, ref?: string, opts?: RequestOptions): Promise<any> =>
+  buildKnowledge: (id: string, base: string, ref?: string, opts?: RequestOptions): Promise<unknown> =>
     request('POST', `/bots/${enc(id)}/knowledge/${enc(base)}/build`, { ...opts, body: ref ? { ref } : {} }),
 
   // 26. Knowledge status
-  knowledgeStatus: (id: string, base: string, ref?: string, opts?: RequestOptions): Promise<KnowledgeStatus> =>
-    request('GET', `/bots/${enc(id)}/knowledge/${enc(base)}/status${ref ? `?ref=${enc(ref)}` : ''}`, opts),
+  knowledgeStatus: (id: string, base: string, ref?: string, opts?: RequestOptions): Promise<KnowledgeStatus> => {
+    const queryString = ref ? `?ref=${enc(ref)}` : '';
+    return request('GET', `/bots/${enc(id)}/knowledge/${enc(base)}/status${queryString}`, opts);
+  },
 
   // 27. Search knowledge
   searchKnowledge: (id: string, base: string, search: { query: string; top_k?: number; previous_reply?: string; ref?: string }, opts?: RequestOptions): Promise<KnowledgeSearchResult> =>
     request('POST', `/bots/${enc(id)}/knowledge/${enc(base)}/search`, { ...opts, body: search }),
 
   // 28. Calls list
-  listCalls: (id: string, filters: Record<string, any> = {}, opts?: RequestOptions): Promise<CallsResponse> =>
+  listCalls: (id: string, filters: Record<string, unknown> = {}, opts?: RequestOptions): Promise<CallsResponse> =>
     request('GET', `/bots/${enc(id)}/calls${queryOf(filters)}`, opts),
 
   // 29. Call detail
-  getCall: (id: string, callId: string, query: Record<string, any> = {}, opts?: RequestOptions): Promise<any> =>
+  getCall: (id: string, callId: string, query: Record<string, unknown> = {}, opts?: RequestOptions): Promise<unknown> =>
     request('GET', `/bots/${enc(id)}/calls/${enc(callId)}${queryOf(query)}`, opts),
 
   // 30. Call transcript
@@ -305,11 +326,13 @@ export const api = {
     `${BASE}/bots/${enc(id)}/calls/${enc(callId)}/download`,
 
   // 33. List tests
-  listTests: (id: string, query?: { ref?: string }, opts?: RequestOptions): Promise<{ scenarios: Scenario[]; ref?: string }> =>
-    request('GET', `/bots/${enc(id)}/tests${query?.ref ? `?ref=${enc(query.ref)}` : ''}`, opts),
+  listTests: (id: string, query?: { ref?: string }, opts?: RequestOptions): Promise<{ scenarios: Scenario[]; ref?: string }> => {
+    const queryString = query?.ref ? `?ref=${enc(query.ref)}` : '';
+    return request('GET', `/bots/${enc(id)}/tests${queryString}`, opts);
+  },
 
   // 34. Run tests
-  runTests: (id: string, run: Record<string, any> = {}, opts?: RequestOptions): Promise<{ run_id: string; status: string }> =>
+  runTests: (id: string, run: Record<string, unknown> = {}, opts?: RequestOptions): Promise<{ run_id: string; status: string }> =>
     request('POST', `/bots/${enc(id)}/tests/run`, { ...opts, body: run }),
 
   // 35. List test runs
@@ -321,43 +344,43 @@ export const api = {
     request('GET', `/bots/${enc(id)}/tests/runs/${enc(runId)}`, opts),
 
   // Additional endpoints
-  channelTypes: (opts?: RequestOptions): Promise<{ types: any[]; note?: string }> =>
+  channelTypes: (opts?: RequestOptions): Promise<{ types: unknown[]; note?: string }> =>
     request('GET', '/channel-types', opts),
 
-  previewSpeech: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  previewSpeech: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', '/preview/speech', { ...opts, body }),
 
-  previewGuardrails: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  previewGuardrails: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', '/preview/guardrails', { ...opts, body }),
 
-  previewRedaction: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  previewRedaction: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', '/preview/redaction', { ...opts, body }),
 
-  previewTask: (body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  previewTask: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', '/preview/task', { ...opts, body }),
 
   redactionEntities: (opts?: RequestOptions): Promise<{ entities: Array<{ kind: string; how: string }> }> =>
     request('GET', '/redaction/entities', opts),
 
-  numberSettings: (opts?: RequestOptions): Promise<any> =>
+  numberSettings: (opts?: RequestOptions): Promise<unknown> =>
     request('GET', '/numbers/settings', opts),
 
-  listNumbers: (opts?: RequestOptions): Promise<any[]> =>
+  listNumbers: (opts?: RequestOptions): Promise<unknown[]> =>
     request('GET', '/numbers', opts),
 
-  checkNumber: (number: string, opts?: RequestOptions): Promise<{ status: string; owner?: any; warnings?: string[]; reason?: string }> =>
+  checkNumber: (number: string, opts?: RequestOptions): Promise<{ status: string; owner?: unknown; warnings?: string[]; reason?: string }> =>
     request('GET', `/numbers/check?number=${enc(number)}`, opts),
 
-  listBotNumbers: (id: string, opts?: RequestOptions): Promise<any[]> =>
+  listBotNumbers: (id: string, opts?: RequestOptions): Promise<unknown[]> =>
     request('GET', `/bots/${enc(id)}/numbers`, opts),
 
-  createNumber: (id: string, body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  createNumber: (id: string, body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('POST', `/bots/${enc(id)}/numbers`, { ...opts, body }),
 
-  changeNumber: (id: string, number: string, body: Record<string, any>, opts?: RequestOptions): Promise<any> =>
+  changeNumber: (id: string, number: string, body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
     request('PATCH', `/bots/${enc(id)}/numbers/${enc(number)}`, { ...opts, body }),
 
-  releaseNumber: (id: string, number: string, opts?: RequestOptions): Promise<{ removed: any[] }> =>
+  releaseNumber: (id: string, number: string, opts?: RequestOptions): Promise<{ removed: unknown[] }> =>
     request('DELETE', `/bots/${enc(id)}/numbers/${enc(number)}`, opts),
 };
 
@@ -371,16 +394,17 @@ export function followCall(
     onError,
     after,
   }: {
-    onOpen?: (call: any) => void;
-    onRecord?: (record: any) => void;
+    onOpen?: (call: unknown) => void;
+    onRecord?: (record: unknown) => void;
     onEnd?: () => void;
     onError?: () => void;
     after?: number;
   }
 ): () => void {
-  const source = new EventSource(`${BASE}/bots/${enc(id)}/calls/${enc(callId)}/stream${after ? `?after=${after}` : ''}`);
+  const afterQuery = after ? `?after=${after}` : '';
+  const source = new EventSource(`${BASE}/bots/${enc(id)}/calls/${enc(callId)}/stream${afterQuery}`);
 
-  const parse = (event: MessageEvent) => {
+  const parse = (event: MessageEvent<string>): unknown => {
     try {
       return JSON.parse(event.data);
     } catch {
@@ -388,8 +412,8 @@ export function followCall(
     }
   };
 
-  source.addEventListener('open', (event: any) => {
-    const call = parse(event);
+  source.addEventListener('open', (event: Event) => {
+    const call = parse(event as MessageEvent<string>);
     if (call && onOpen) onOpen(call);
   });
 
