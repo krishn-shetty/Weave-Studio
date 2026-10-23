@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../../utils/styles';
 
-export type ChipTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent';
+export type ChipTone = 'neutral' | 'success' | 'warning' | 'danger' | 'info' | 'accent' | 'primary';
 
 interface StatusChipProps {
   tone?: ChipTone;
@@ -17,7 +17,8 @@ const tones: Record<ChipTone, string> = {
   warning: 'bg-warning-soft text-warning',
   danger: 'bg-danger-soft text-danger',
   info: 'bg-info-soft text-info',
-  accent: 'bg-accent-soft text-accent'
+  accent: 'bg-accent-soft text-accent',
+  primary: 'bg-primary-soft text-primary'
 };
 
 export function StatusChip({ tone = 'neutral', dot = false, children, className, title }: StatusChipProps) {

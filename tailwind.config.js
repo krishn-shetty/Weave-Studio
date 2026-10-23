@@ -19,6 +19,12 @@ export default {content: [
           soft: c('accent-soft'),
           ink: c('accent-ink'),
         },
+        primary: {
+          DEFAULT: c('primary'),
+          strong: c('primary-strong'),
+          soft: c('primary-soft'),
+          ink: c('primary-ink'),
+        },
         success: { DEFAULT: c('success'), soft: c('success-soft') },
         warning: { DEFAULT: c('warning'), soft: c('warning-soft') },
         danger: { DEFAULT: c('danger'), soft: c('danger-soft') },

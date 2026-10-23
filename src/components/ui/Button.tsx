@@ -10,7 +10,7 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  primary: 'bg-accent text-accent-ink shadow-sm hover:bg-accent-strong',
+  primary: 'bg-primary text-primary-ink shadow-sm hover:bg-primary-strong',
   secondary: 'border border-line-strong bg-surface text-ink shadow-sm hover:bg-subtle',
   ghost: 'text-ink-soft hover:bg-subtle hover:text-ink',
   danger: 'bg-danger text-white shadow-sm hover:bg-danger/90'
@@ -22,15 +22,15 @@ const sizes: Record<Size, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-{ variant = 'secondary', size = 'md', className, type = 'button', ...rest },
-ref)
-{
+  { variant = 'secondary', size = 'md', className, type = 'button', ...rest },
+  ref
+) {
   return (
     <button
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-[background-color,border-color,color,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 focus-visible:ring-offset-1 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+        'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-[background-color,border-color,color,transform] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
         variants[variant],
         sizes[size],
         className
