@@ -1,7 +1,7 @@
 # Weave Studio — Enterprise Conversational AI Agent Studio
 
 <p align="center">
-  <img src="public/favicon.svg" alt="Weave Studio Logo" width="64" height="64" />
+  <img src="public/icon.png" alt="Weave Studio Logo" width="64" height="64" />
 </p>
 
 <p align="center">
