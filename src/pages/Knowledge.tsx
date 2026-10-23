@@ -17,6 +17,13 @@ import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Segmented } from '../components/ui/Segmented';
 import { Dialog } from '../components/ui/Dialog';
+import { Tooltip } from '../components/ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../components/ui/accordion';
 import { formatBytes, formatDateTime } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
 import { api } from '../api/client';
@@ -75,6 +82,12 @@ export function Knowledge() {
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
   const [uploading, setUploading] = useState(false);
+
+  // Pagination for Accordions
+  const [basesPage, setBasesPage] = useState(1);
+  const [basesPageSize, setBasesPageSize] = useState(5);
+  const [filesPage, setFilesPage] = useState(1);
+  const [filesPageSize, setFilesPageSize] = useState(5);
 
   // Fetch knowledge data for selected agent
   const fetchKnowledge = async () => {
@@ -327,62 +340,122 @@ export function Knowledge() {
               No knowledge bases defined in this bot’s draft configuration.
             </div>
           ) : (
-            <div className="grid gap-6">
-              {bases.map((base) => (
-                <div key={base.id} className="rounded-xl border border-line bg-surface p-6 shadow-panel">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-base font-semibold text-ink">{base.id}</h3>
-                      <p className="text-xs text-muted mt-0.5">Type: {base.type} · Mode: {base.mode}</p>
-                    </div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => handleStartBuild(base.id)}
-                      disabled={buildingBaseId === base.id}
-                    >
-                      {buildingBaseId === base.id ? (
-                        <>
-                          <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" />
-                          Building…
-                        </>
-                      ) : (
-                        'Build Vector Index'
-                      )}
-                    </Button>
-                  </div>
+            <Accordion
+              items={bases.slice((basesPage - 1) * basesPageSize, basesPage * basesPageSize)}
+              onReorder={(newItems) => {
+                const start = (basesPage - 1) * basesPageSize;
+                const next = [...bases];
+                next.splice(start, newItems.length, ...newItems);
+                setBases(next);
+              }}
+              enableReordering={true}
+              enableDragAndDrop={true}
+              pagination={{
+                page: basesPage,
+                pageSize: basesPageSize,
+                totalItems: bases.length,
+                onPageChange: (p) => setBasesPage(p),
+                onPageSizeChange: (s) => {
+                  setBasesPageSize(s);
+                  setBasesPage(1);
+                },
+                pageSizeOptions: [3, 5, 10],
+              }}
+            >
+              {bases.slice((basesPage - 1) * basesPageSize, basesPage * basesPageSize).map((base, idx, arr) => {
+                const isFirst = idx === 0;
+                const isLast = idx === arr.length - 1;
 
-                  {buildingBaseId === base.id && buildLogs.length > 0 && (
-                    <div className="mt-4 rounded-lg bg-black/90 p-3 font-mono text-xs text-green-400">
-                      {buildLogs.map((l, i) => (
-                        <p key={i}>{l}</p>
-                      ))}
-                    </div>
-                  )}
+                return (
+                  <AccordionItem
+                    key={base.id}
+                    id={base.id}
+                    index={idx}
+                    isFirst={isFirst}
+                    isLast={isLast}
+                  >
+                    <AccordionHeader
+                      id={base.id}
+                      icon={<DatabaseIcon className="h-4 w-4 text-accent" />}
+                      title={base.id}
+                      subtitle={`Type: ${base.type} · Mode: ${base.mode}`}
+                      badge={
+                        <StatusChip
+                          tone={base.embedding_key_available ? 'success' : 'warning'}
+                          dot
+                        >
+                          {base.build?.status || 'Ready'}
+                        </StatusChip>
+                      }
+                      actions={
+                        <Tooltip content="Build and sync vector embeddings" position="top">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleStartBuild(base.id)}
+                            disabled={buildingBaseId === base.id}
+                            className="h-8 px-2.5 text-xs"
+                          >
+                            {buildingBaseId === base.id ? (
+                              <>
+                                <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin mr-1" />
+                                Building…
+                              </>
+                            ) : (
+                              'Build Index'
+                            )}
+                          </Button>
+                        </Tooltip>
+                      }
+                    />
 
-                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs border-t border-line pt-4">
-                    <div>
-                      <span className="text-muted block">Sources</span>
-                      <span className="text-ink font-medium">{base.sources?.length || 0} files</span>
-                    </div>
-                    <div>
-                      <span className="text-muted block">Used by</span>
-                      <span className="text-ink font-medium">{formatUsedBy(base.used_by)}</span>
-                    </div>
-                    <div>
-                      <span className="text-muted block">Embedding Key</span>
-                      <span className={cn('font-medium', base.embedding_key_available ? 'text-green-600' : 'text-amber-600')}>
-                        {base.embedding_key_available ? 'Available' : 'Missing'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-muted block">Status</span>
-                      <span className="text-ink font-medium">{base.build?.status || 'Ready'}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+                    <AccordionContent>
+                      <div className="space-y-4">
+                        {buildingBaseId === base.id && buildLogs.length > 0 && (
+                          <div className="rounded-lg bg-black/90 p-3 font-mono text-xs text-green-400">
+                            {buildLogs.map((l, i) => (
+                              <p key={i}>{l}</p>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                          <div className="rounded-lg border border-line bg-surface p-3">
+                            <span className="text-muted block">Sources</span>
+                            <span className="text-ink font-semibold mt-1 block">
+                              {base.sources?.length || 0} files
+                            </span>
+                          </div>
+                          <div className="rounded-lg border border-line bg-surface p-3">
+                            <span className="text-muted block">Used by</span>
+                            <span className="text-ink font-semibold mt-1 block truncate">
+                              {formatUsedBy(base.used_by)}
+                            </span>
+                          </div>
+                          <div className="rounded-lg border border-line bg-surface p-3">
+                            <span className="text-muted block">Embedding Key</span>
+                            <span
+                              className={cn(
+                                'font-semibold mt-1 block',
+                                base.embedding_key_available ? 'text-success' : 'text-warning'
+                              )}
+                            >
+                              {base.embedding_key_available ? 'Available' : 'Missing'}
+                            </span>
+                          </div>
+                          <div className="rounded-lg border border-line bg-surface p-3">
+                            <span className="text-muted block">Vector Status</span>
+                            <span className="text-ink font-semibold mt-1 block capitalize">
+                              {base.build?.status || 'Ready'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
           )}
         </div>
       )}
@@ -394,40 +467,84 @@ export function Knowledge() {
               No files uploaded for {selectedAgentId} yet. Click "Upload file" to add guides, FAQs, or markdown.
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-line bg-surface">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-line text-left text-xs text-muted">
-                    <th className="px-4 py-2.5 font-medium">Name</th>
-                    <th className="px-4 py-2.5 font-medium">Size</th>
-                    <th className="px-4 py-2.5 font-medium">Modified</th>
-                    <th className="px-4 py-2.5 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {files.map((file) => (
-                    <tr key={file.name}>
-                      <td className="px-4 py-3 font-medium text-ink flex items-center gap-2">
-                        <FileTextIcon className="h-4 w-4 text-muted shrink-0" />
-                        {file.name}
-                      </td>
-                      <td className="px-4 py-3 text-muted">{formatBytes(file.size)}</td>
-                      <td className="px-4 py-3 text-muted">{formatDateTime(file.modified)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteFile(file.name)}
-                          className="text-red-500 hover:text-red-600"
-                        >
-                          <Trash2Icon className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Accordion
+              items={files.slice((filesPage - 1) * filesPageSize, filesPage * filesPageSize)}
+              onReorder={(newItems) => {
+                const start = (filesPage - 1) * filesPageSize;
+                const next = [...files];
+                next.splice(start, newItems.length, ...newItems);
+                setFiles(next);
+              }}
+              enableReordering={true}
+              enableDragAndDrop={true}
+              pagination={{
+                page: filesPage,
+                pageSize: filesPageSize,
+                totalItems: files.length,
+                onPageChange: (p) => setFilesPage(p),
+                onPageSizeChange: (s) => {
+                  setFilesPageSize(s);
+                  setFilesPage(1);
+                },
+                pageSizeOptions: [5, 10, 20],
+              }}
+            >
+              {files.slice((filesPage - 1) * filesPageSize, filesPage * filesPageSize).map((file, idx, arr) => {
+                const isFirst = idx === 0;
+                const isLast = idx === arr.length - 1;
+
+                return (
+                  <AccordionItem
+                    key={file.name}
+                    id={file.name}
+                    index={idx}
+                    isFirst={isFirst}
+                    isLast={isLast}
+                  >
+                    <AccordionHeader
+                      id={file.name}
+                      icon={<FileTextIcon className="h-4 w-4 text-muted" />}
+                      title={file.name}
+                      subtitle={`Modified: ${formatDateTime(file.modified)}`}
+                      badge={
+                        <span className="rounded bg-subtle px-2 py-0.5 font-mono text-[11px] text-muted font-medium">
+                          {formatBytes(file.size)}
+                        </span>
+                      }
+                      actions={
+                        <Tooltip content={`Delete file ${file.name}`} position="top">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteFile(file.name)}
+                            className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                            aria-label={`Delete ${file.name}`}
+                          >
+                            <Trash2Icon className="h-3.5 w-3.5" />
+                          </Button>
+                        </Tooltip>
+                      }
+                    />
+
+                    <AccordionContent>
+                      <div className="flex flex-wrap items-center justify-between gap-4 text-xs">
+                        <div>
+                          <p className="font-medium text-ink">Document Indexing State</p>
+                          <p className="text-muted mt-0.5">
+                            Ready for chunking, vector embeddings, and retrieval-augmented generation.
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-muted text-[11px]">
+                            {file.size} bytes
+                          </span>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                );
+              })}
+            </Accordion>
           )}
         </div>
       )}

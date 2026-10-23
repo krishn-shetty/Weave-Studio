@@ -1,26 +1,54 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRightIcon, CheckIcon, HistoryIcon, PlusIcon } from 'lucide-react';
+import {
+  ArrowRightIcon,
+  BotIcon,
+  CheckIcon,
+  ExternalLinkIcon,
+  HistoryIcon,
+  ListIcon,
+  PlayIcon,
+  PlusIcon,
+  RocketIcon,
+  TableIcon,
+  WrenchIcon,
+} from 'lucide-react';
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
+import { Tooltip } from '../components/ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../components/ui/accordion';
 import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { AuditTrailDialog } from '../components/ui/AuditTrailDialog';
 import { FirstRunChecklist } from '../components/home/FirstRunChecklist';
-import { currentDeployments, environments, envLabel, nextStep, pendingDeployment } from '../utils/agentStatus';
+import { currentDeployments, environments, envLabel, envShort, nextStep, pendingDeployment } from '../utils/agentStatus';
 import { timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
 import type { StageId } from '../types/studio';
 
-const stages: {id: StageId;label: string;}[] = [
-{ id: 'build', label: 'Build' },
-{ id: 'test', label: 'Test' },
-{ id: 'release', label: 'Release' },
-{ id: 'monitor', label: 'Monitor' }];
+const stages: { id: StageId; label: string }[] = [
+  { id: 'build', label: 'Build' },
+  { id: 'test', label: 'Test' },
+  { id: 'release', label: 'Release' },
+  { id: 'monitor', label: 'Monitor' },
+];
 
-
-const actionVerb = { created: 'created', saved: 'saved', published: 'published', deployed: 'deployed', rolled_back: 'rolled back', restored: 'restored', exported: 'exported', imported: 'imported' } as const;
+const actionVerb = {
+  created: 'created',
+  saved: 'saved',
+  published: 'published',
+  deployed: 'deployed',
+  rolled_back: 'rolled back',
+  restored: 'restored',
+  exported: 'exported',
+  imported: 'imported',
+} as const;
 
 export function Home() {
   const { agents, activity } = useStudio();
@@ -31,6 +59,16 @@ export function Home() {
   const [showChecklist, setShowChecklist] = useState(() => {
     return localStorage.getItem('weave_first_run_dismissed') !== 'true';
   });
+  const [liveViewMode, setLiveViewMode] = useState<'accordion' | 'table'>('accordion');
+
+  // Ordered list of agents for What's Live
+  const [liveAgents, setLiveAgents] = useState(() => agents);
+  const [livePage, setLivePage] = useState(1);
+  const [livePageSize, setLivePageSize] = useState(5);
+
+  React.useEffect(() => {
+    setLiveAgents(agents);
+  }, [agents]);
 
   const handleDismissChecklist = () => {
     setShowChecklist(false);
@@ -48,6 +86,18 @@ export function Home() {
   );
   const step = focus ? nextStep(focus) : null;
   const stageIndex = step ? stages.findIndex((s) => s.id === step.stage) : 0;
+
+  const totalPages = Math.max(1, Math.ceil(liveAgents.length / livePageSize));
+  const safePage = Math.min(livePage, totalPages);
+  const startIndex = (safePage - 1) * livePageSize;
+  const visibleLiveAgents = liveAgents.slice(startIndex, startIndex + livePageSize);
+
+  const handleReorderLive = (newVisible: typeof visibleLiveAgents) => {
+    const next = [...liveAgents];
+    next.splice(startIndex, visibleLiveAgents.length, ...newVisible);
+    setLiveAgents(next);
+  };
+
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -63,12 +113,12 @@ export function Home() {
             </button>
           )}
         </div>
-        {can('edit') &&
-        <Button variant="secondary" onClick={() => setCreateOpen(true)}>
+        {can('edit') && (
+          <Button variant="secondary" onClick={() => setCreateOpen(true)}>
             <PlusIcon className="h-4 w-4" aria-hidden />
             Create agent
           </Button>
-        }
+        )}
       </div>
 
       {showChecklist && (
@@ -80,8 +130,8 @@ export function Home() {
         </div>
       )}
 
-      {step && focus ?
-      <section aria-labelledby="next-step" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel lg:p-8">
+      {step && focus ? (
+        <section aria-labelledby="next-step" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel lg:p-8">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted">
             <span>Next step</span>
             <span aria-hidden>·</span>
@@ -104,86 +154,267 @@ export function Home() {
               </div>
             </div>
             <ol className="flex items-center gap-1.5" aria-label="Where this agent is in the journey">
-              {stages.map((s, i) =>
-            <li key={s.id} className="flex items-center gap-1.5">
+              {stages.map((s, i) => (
+                <li key={s.id} className="flex items-center gap-1.5">
                   <span
-                className={cn(
-                  'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-                  i < stageIndex && 'bg-success-soft text-success',
-                  i === stageIndex && 'bg-ink text-white',
-                  i > stageIndex && 'bg-subtle text-muted'
-                )}
-                aria-current={i === stageIndex ? 'step' : undefined}>
-                
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+                      i < stageIndex && 'bg-success-soft text-success',
+                      i === stageIndex && 'bg-ink text-white',
+                      i > stageIndex && 'bg-subtle text-muted'
+                    )}
+                    aria-current={i === stageIndex ? 'step' : undefined}
+                  >
                     {i < stageIndex && <CheckIcon className="h-3 w-3" aria-hidden />}
                     {s.label}
                   </span>
                   {i < stages.length - 1 && <span className="h-px w-3 bg-line-strong" aria-hidden />}
                 </li>
-            )}
+              ))}
             </ol>
           </div>
-        </section> :
-
-      <section className="mt-6 rounded-xl border border-line bg-surface p-8 shadow-panel">
+        </section>
+      ) : (
+        <section className="mt-6 rounded-xl border border-line bg-surface p-8 shadow-panel">
           <h2 className="text-xl font-semibold text-ink">Create your first agent</h2>
           <p className="mt-2 max-w-lg text-sm text-ink-soft">Pick a starter, change the company name and greeting, and you can be talking to it in a few minutes.</p>
-          {can('edit') &&
-        <Button variant="primary" className="mt-5" onClick={() => setCreateOpen(true)}>
+          {can('edit') && (
+            <Button variant="primary" className="mt-5" onClick={() => setCreateOpen(true)}>
               Choose a starter
             </Button>
-        }
+          )}
         </section>
-      }
+      )}
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.6fr_1fr]">
         <section aria-labelledby="whats-live">
           <div className="flex items-baseline justify-between">
-            <h2 id="whats-live" className="text-sm font-semibold text-ink">
-              What’s live
-            </h2>
-            <Link to="/agents" className="text-[13px] font-medium text-accent hover:underline">
-              All agents
-            </Link>
+            <div className="flex items-center gap-2">
+              <h2 id="whats-live" className="text-sm font-semibold text-ink">
+                What’s live
+              </h2>
+              <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center rounded-lg border border-line bg-surface p-0.5">
+                <Tooltip content="Accordion live view with reordering & environment cards" position="top">
+                  <button
+                    type="button"
+                    onClick={() => setLiveViewMode('accordion')}
+                    className={cn(
+                      'p-1 rounded text-xs transition-colors',
+                      liveViewMode === 'accordion' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink'
+                    )}
+                    aria-label="Accordion view"
+                  >
+                    <ListIcon className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+                <Tooltip content="Compact table grid view" position="top">
+                  <button
+                    type="button"
+                    onClick={() => setLiveViewMode('table')}
+                    className={cn(
+                      'p-1 rounded text-xs transition-colors',
+                      liveViewMode === 'table' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink'
+                    )}
+                    aria-label="Table view"
+                  >
+                    <TableIcon className="h-3.5 w-3.5" />
+                  </button>
+                </Tooltip>
+              </div>
+              <Link to="/agents" className="text-[13px] font-medium text-accent hover:underline">
+                All agents
+              </Link>
+            </div>
           </div>
-          <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-muted">
-                  <th scope="col" className="px-4 py-2.5 font-medium">Agent</th>
-                  {environments.map((e) =>
-                  <th key={e} scope="col" className="px-4 py-2.5 font-medium">{envLabel(e)}</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {agents.map((a) => {
+
+          {liveViewMode === 'table' ? (
+            <div className="mt-3 overflow-x-auto rounded-lg border border-line bg-surface">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-xs text-muted">
+                    <th scope="col" className="px-4 py-2.5 font-medium">Agent</th>
+                    {environments.map((e) => (
+                      <th key={e} scope="col" className="px-4 py-2.5 font-medium">{envLabel(e)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleLiveAgents.map((a) => {
+                    const current = currentDeployments(a);
+                    return (
+                      <tr key={a.id} className="border-b border-line last:border-0 hover:bg-canvas transition-colors">
+                        <th scope="row" className="px-4 py-3 text-left font-medium">
+                          <Link to={`/agents/${a.id}/release`} className="text-ink hover:underline">
+                            {a.name}
+                          </Link>
+                        </th>
+                        {environments.map((e) => {
+                          const pending = pendingDeployment(a, e);
+                          return (
+                            <td key={e} className="px-4 py-3">
+                              {pending ? (
+                                <StatusChip tone="info" dot>Deploying {pending.version}</StatusChip>
+                              ) : current[e] ? (
+                                <span className="font-mono text-[13px] text-ink">{current[e]?.version}</span>
+                              ) : (
+                                <span className="text-muted" aria-label="Not deployed">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            /* Uniform Accordion for What's live */
+            <div className="mt-3">
+              <Accordion
+                items={visibleLiveAgents}
+                onReorder={handleReorderLive}
+                enableReordering={true}
+                enableDragAndDrop={true}
+                pagination={{
+                  page: safePage,
+                  pageSize: livePageSize,
+                  totalItems: liveAgents.length,
+                  onPageChange: (p) => setLivePage(p),
+                  onPageSizeChange: (s) => {
+                    setLivePageSize(s);
+                    setLivePage(1);
+                  },
+                  pageSizeOptions: [3, 5, 10],
+                }}
+              >
+                {visibleLiveAgents.map((a, idx) => {
                   const current = currentDeployments(a);
+                  const isFirst = idx === 0;
+                  const isLast = idx === visibleLiveAgents.length - 1;
+                  const liveCount = environments.filter((e) => current[e]).length;
+
                   return (
-                    <tr key={a.id} className="border-b border-line last:border-0">
-                      <th scope="row" className="px-4 py-3 text-left font-medium">
-                        <Link to={`/agents/${a.id}/release`} className="text-ink hover:underline">{a.name}</Link>
-                      </th>
-                      {environments.map((e) => {
-                        const pending = pendingDeployment(a, e);
-                        return (
-                          <td key={e} className="px-4 py-3">
-                            {pending ?
-                            <StatusChip tone="info" dot>Deploying {pending.version}</StatusChip> :
-                            current[e] ?
-                            <span className="font-mono text-[13px] text-ink">{current[e]?.version}</span> :
+                    <AccordionItem
+                      key={a.id}
+                      id={a.id}
+                      index={idx}
+                      isFirst={isFirst}
+                      isLast={isLast}
+                    >
+                      <AccordionHeader
+                        id={a.id}
+                        icon={<BotIcon className="h-4 w-4 text-accent" />}
+                        title={a.name}
+                        subtitle={
+                          <span>
+                            <code className="font-mono text-xs">{a.id}</code> · {liveCount > 0 ? `Serving in ${liveCount} environments` : 'Not deployed yet'}
+                          </span>
+                        }
+                        badge={
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {environments
+                              .filter((e) => current[e])
+                              .map((e) => (
+                                <StatusChip
+                                  key={e}
+                                  tone={e === 'production' ? 'accent' : 'neutral'}
+                                >
+                                  {envShort(e)} <span className="font-mono text-[11px]">{current[e]?.version}</span>
+                                </StatusChip>
+                              ))}
+                            {liveCount === 0 && <StatusChip tone="neutral">Idle</StatusChip>}
+                          </div>
+                        }
+                        actions={
+                          <Tooltip content="Open release manager" position="top">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => navigate(`/agents/${a.id}/release`)}
+                              className="h-8 px-2 text-xs"
+                            >
+                              <RocketIcon className="h-3.5 w-3.5 mr-1 text-info" />
+                              <span className="hidden sm:inline">Releases</span>
+                            </Button>
+                          </Tooltip>
+                        }
+                      />
 
-                            <span className="text-muted" aria-label="Not deployed">—</span>
-                            }
-                          </td>);
+                      <AccordionContent>
+                        <div className="space-y-4">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                            Environment Rollout Status
+                          </h4>
+                          <div className="grid gap-3 sm:grid-cols-3">
+                            {environments.map((e) => {
+                              const deployed = current[e];
+                              const pending = pendingDeployment(a, e);
+                              return (
+                                <div
+                                  key={e}
+                                  className="rounded-lg border border-line bg-surface p-3 text-xs"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium text-ink">{envLabel(e)}</span>
+                                    {pending ? (
+                                      <StatusChip tone="info" dot>
+                                        Deploying
+                                      </StatusChip>
+                                    ) : deployed ? (
+                                      <StatusChip tone={e === 'production' ? 'accent' : 'success'} dot>
+                                        Active
+                                      </StatusChip>
+                                    ) : (
+                                      <span className="text-muted text-[11px]">Inactive</span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 font-mono text-ink text-xs font-semibold">
+                                    {pending ? pending.version : deployed ? deployed.version : '—'}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
 
-                      })}
-                    </tr>);
-
+                          <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-line/60">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => navigate(`/agents/${a.id}/release`)}
+                              >
+                                <RocketIcon className="h-3.5 w-3.5 mr-1.5 text-info" />
+                                Manage Deployments
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => navigate(`/agents/${a.id}/test`)}
+                              >
+                                <PlayIcon className="h-3.5 w-3.5 mr-1.5 text-success" />
+                                Test Live
+                              </Button>
+                            </div>
+                            <Link
+                              to={`/agents/${a.id}`}
+                              className="text-xs font-medium text-accent hover:underline flex items-center gap-1"
+                            >
+                              <span>Workspace</span>
+                              <ExternalLinkIcon className="h-3 w-3" />
+                            </Link>
+                          </div>
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </Accordion>
+            </div>
+          )}
         </section>
 
         <section aria-labelledby="activity">
@@ -210,14 +441,14 @@ export function Home() {
                   <p className="mt-0.5 text-muted">
                     {item.detail} · {timeAgo(item.at)}
                   </p>
-                </li>);
-
+                </li>
+              );
             })}
           </ul>
         </section>
       </div>
       <CreateAgentDialog open={createOpen} onClose={() => setCreateOpen(false)} />
       <AuditTrailDialog open={auditOpen} onClose={() => setAuditOpen(false)} />
-    </div>);
-
+    </div>
+  );
 }

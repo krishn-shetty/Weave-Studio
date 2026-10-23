@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { BarChart3Icon, BookOpenIcon, BotIcon, CommandIcon, HouseIcon, LibraryIcon, LogOutIcon, PhoneCallIcon, SearchIcon, SettingsIcon } from 'lucide-react';
+import { BarChart3Icon, BookOpenIcon, BotIcon, CommandIcon, HouseIcon, LibraryIcon, LogOutIcon, PhoneCallIcon, RadioIcon, SearchIcon, SettingsIcon } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { WeaveMark } from '../ui/WeaveMark';
 import { cn } from '../../utils/styles';
@@ -8,6 +8,7 @@ import { cn } from '../../utils/styles';
 const nav = [
   { to: '/', label: 'Home', icon: HouseIcon, end: true },
   { to: '/agents', label: 'Agents', icon: BotIcon, end: false },
+  { to: '/live', label: 'Live', icon: RadioIcon, end: false },
   { to: '/analytics', label: 'Analytics', icon: BarChart3Icon, end: false },
   { to: '/knowledge', label: 'Knowledge', icon: BookOpenIcon, end: false },
   { to: '/calls', label: 'Calls', icon: PhoneCallIcon, end: false },

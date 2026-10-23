@@ -12,6 +12,7 @@ import {
   MoonIcon,
   PhoneCallIcon,
   PlusIcon,
+  RadioIcon,
   SearchIcon,
   SettingsIcon,
   SlidersIcon,
@@ -97,6 +98,17 @@ export function CommandPalette({ open, onClose, onOpenCreate }: CommandPalettePr
         icon: BotIcon,
         perform: () => {
           navigate('/agents');
+          onClose();
+        }
+      },
+      {
+        id: 'nav-live',
+        category: 'Navigation',
+        title: 'Live Monitoring',
+        subtitle: 'Real-time active sessions, audio streams, and live channels',
+        icon: RadioIcon,
+        perform: () => {
+          navigate('/live');
           onClose();
         }
       },

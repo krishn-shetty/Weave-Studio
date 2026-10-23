@@ -1,17 +1,41 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { ChevronLeftIcon, ChevronRightIcon, RefreshCwIcon, SearchIcon } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  ArrowRightIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  FlaskConicalIcon,
+  LayersIcon,
+  ListIcon,
+  MessageSquareIcon,
+  PhoneCallIcon,
+  PhoneIcon,
+  RefreshCwIcon,
+  SearchIcon,
+  SparklesIcon,
+  TableIcon,
+} from 'lucide-react';
 import { useStudio } from '../contexts/StudioContext';
 import { CallsTable, channelName, outcomeMeta } from '../components/calls/CallsTable';
 import { Button } from '../components/ui/Button';
+import { StatusChip } from '../components/ui/StatusChip';
+import { Tooltip } from '../components/ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../components/ui/accordion';
+import { formatDateTime, formatDuration, formatShortDate } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
 import { api } from '../api/client';
 import type { CallRecord } from '../types/studio';
 
-const PAGE_SIZE = 10;
-
 export function Calls() {
   const { agents } = useStudio();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') ?? '';
   const agent = params.get('agent') ?? '';
@@ -19,6 +43,9 @@ export function Calls() {
   const outcome = params.get('outcome') ?? '';
   const env = params.get('env') ?? '';
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+  const pageSizeParam = Number(params.get('size') ?? '10') || 10;
+  const [pageSize, setPageSize] = useState<number>(pageSizeParam);
+  const [viewMode, setViewMode] = useState<'accordion' | 'table'>('accordion');
 
   const [realCalls, setRealCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,6 +57,16 @@ export function Calls() {
     else next.delete(key);
     if (key !== 'page') next.delete('page');
     setParams(next, { replace: true });
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setParam('size', String(newSize));
+    setParam('page', '1');
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setParam('page', String(newPage));
   };
 
   const agentNames = useMemo(() => Object.fromEntries(agents.map((a) => [a.id, a.name])), [agents]);
@@ -101,10 +138,32 @@ export function Calls() {
       .filter((c) => !env || c.environment === env);
   }, [realCalls, q, agent, channel, outcome, env]);
 
-  const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pages);
-  const visible = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const startIndex = (safePage - 1) * pageSize;
+  const visible = filtered.slice(startIndex, startIndex + pageSize);
   const selectCls = cn(inputClass, 'w-auto py-1.5');
+
+  const handleReorder = (newItems: CallRecord[]) => {
+    // Reorder visible page items within the full list
+    const visibleIds = new Set(visible.map((v) => v.id));
+    const remaining = realCalls.filter((c) => !visibleIds.has(c.id));
+    // Splice newItems at startIndex
+    const updated = [...realCalls];
+    updated.splice(startIndex, visible.length, ...newItems);
+    setRealCalls(updated);
+  };
+
+  const getChannelIcon = (ch: string) => {
+    switch (ch) {
+      case 'phone':
+        return <PhoneIcon className="h-4 w-4 text-accent" />;
+      case 'web_chat':
+        return <MessageSquareIcon className="h-4 w-4 text-info" />;
+      default:
+        return <PhoneCallIcon className="h-4 w-4 text-success" />;
+    }
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
@@ -115,10 +174,46 @@ export function Calls() {
             Live and recorded conversations from the Agent Builder API.
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={fetchCalls} disabled={loading}>
-          <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* View mode toggle */}
+          <div className="flex items-center rounded-lg border border-line bg-surface p-0.5">
+            <Tooltip content="Accordion list view with reordering & expandable insights" position="top">
+              <button
+                type="button"
+                onClick={() => setViewMode('accordion')}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  viewMode === 'accordion'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'text-muted hover:text-ink'
+                )}
+              >
+                <ListIcon className="h-3.5 w-3.5" />
+                <span>Accordions</span>
+              </button>
+            </Tooltip>
+            <Tooltip content="Compact table grid view" position="top">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                  viewMode === 'table'
+                    ? 'bg-accent text-white shadow-sm'
+                    : 'text-muted hover:text-ink'
+                )}
+              >
+                <TableIcon className="h-3.5 w-3.5" />
+                <span>Table</span>
+              </button>
+            </Tooltip>
+          </div>
+
+          <Button variant="secondary" size="sm" onClick={fetchCalls} disabled={loading}>
+            <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       <div className="mt-6 flex flex-wrap items-center gap-2">
@@ -228,7 +323,7 @@ export function Calls() {
           <p className="text-sm font-medium text-ink">No calls recorded yet</p>
           <p className="mt-1 text-xs text-muted">Test conversations or live calls will appear here.</p>
         </div>
-      ) : (
+      ) : viewMode === 'table' ? (
         <>
           <div className="mt-4">
             <CallsTable calls={visible} agentNames={agentNames} />
@@ -237,14 +332,14 @@ export function Calls() {
           {pages > 1 && (
             <div className="mt-4 flex items-center justify-between text-xs text-muted">
               <span>
-                Showing {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length} calls
+                Showing {startIndex + 1}–{Math.min(startIndex + pageSize, filtered.length)} of {filtered.length} calls
               </span>
               <div className="flex items-center gap-1">
                 <Button
                   size="sm"
                   variant="secondary"
                   disabled={safePage <= 1}
-                  onClick={() => setParam('page', String(safePage - 1))}
+                  onClick={() => handlePageChange(safePage - 1)}
                   aria-label="Previous page"
                 >
                   <ChevronLeftIcon className="h-4 w-4" />
@@ -256,7 +351,7 @@ export function Calls() {
                   size="sm"
                   variant="secondary"
                   disabled={safePage >= pages}
-                  onClick={() => setParam('page', String(safePage + 1))}
+                  onClick={() => handlePageChange(safePage + 1)}
                   aria-label="Next page"
                 >
                   <ChevronRightIcon className="h-4 w-4" />
@@ -265,6 +360,129 @@ export function Calls() {
             </div>
           )}
         </>
+      ) : (
+        /* Uniform Accordion Experience */
+        <div className="mt-5">
+          <Accordion
+            items={visible}
+            onReorder={handleReorder}
+            enableReordering={true}
+            enableDragAndDrop={true}
+            pagination={{
+              page: safePage,
+              pageSize,
+              totalItems: filtered.length,
+              onPageChange: handlePageChange,
+              onPageSizeChange: handlePageSizeChange,
+              pageSizeOptions: [5, 10, 20, 50],
+            }}
+          >
+            {visible.map((call, idx) => {
+              const agentName = agentNames[call.agentId] ?? call.agentId;
+              const outcomeInfo = outcomeMeta[call.outcome];
+              const isFirst = idx === 0;
+              const isLast = idx === visible.length - 1;
+
+              return (
+                <AccordionItem
+                  key={call.id}
+                  id={call.id}
+                  index={idx}
+                  isFirst={isFirst}
+                  isLast={isLast}
+                >
+                  <AccordionHeader
+                    id={call.id}
+                    icon={getChannelIcon(call.channel)}
+                    title={call.caller}
+                    subtitle={
+                      <span>
+                        {agentName} · {formatShortDate(call.started_at)} · {formatDuration(call.duration_s)} ·{' '}
+                        <span className="font-mono text-[11px]">{call.version}</span>
+                      </span>
+                    }
+                    badge={
+                      <div className="flex items-center gap-1.5">
+                        <StatusChip tone={outcomeInfo.tone}>{outcomeInfo.label}</StatusChip>
+                        <span className="text-[11px] rounded bg-subtle px-2 py-0.5 font-medium text-muted">
+                          {channelName[call.channel]}
+                        </span>
+                      </div>
+                    }
+                    actions={
+                      <Tooltip content="Open call detail view" position="top">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => navigate(`/calls/${call.id}`)}
+                          className="h-8 px-2 text-xs"
+                        >
+                          <ExternalLinkIcon className="h-3.5 w-3.5 mr-1" />
+                          <span className="hidden sm:inline">Details</span>
+                        </Button>
+                      </Tooltip>
+                    }
+                  />
+
+                  <AccordionContent>
+                    <div className="grid gap-6 md:grid-cols-[1.5fr_1fr]">
+                      <div>
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                          Call Summary
+                        </h4>
+                        <p className="mt-1.5 text-sm font-medium text-ink leading-relaxed">
+                          {call.summary}
+                        </p>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            onClick={() => navigate(`/calls/${call.id}`)}
+                          >
+                            <span>Open Transcript</span>
+                            <ArrowRightIcon className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                          <a
+                            href={api.downloadCallUrl(call.agentId, call.id)}
+                            download={`${call.id}.ndjson`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink hover:bg-subtle transition-colors"
+                            title="Download full NDJSON call log"
+                          >
+                            <DownloadIcon className="h-3.5 w-3.5 text-muted" />
+                            <span>Download NDJSON</span>
+                          </a>
+                        </div>
+                      </div>
+
+                      <div className="rounded-lg border border-line bg-surface/70 p-4 text-xs space-y-2">
+                        <h4 className="font-semibold text-ink">Metadata</h4>
+                        <div className="flex justify-between py-1 border-b border-line/50">
+                          <span className="text-muted">Room / ID:</span>
+                          <span className="font-mono text-ink text-[11px] truncate max-w-[150px]">
+                            {call.id}
+                          </span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-line/50">
+                          <span className="text-muted">Timestamp:</span>
+                          <span className="text-ink">{formatDateTime(call.started_at)}</span>
+                        </div>
+                        <div className="flex justify-between py-1 border-b border-line/50">
+                          <span className="text-muted">Duration:</span>
+                          <span className="text-ink font-medium">{formatDuration(call.duration_s)}</span>
+                        </div>
+                        <div className="flex justify-between py-1">
+                          <span className="text-muted">Environment:</span>
+                          <span className="text-ink capitalize font-medium">{call.environment}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        </div>
       )}
     </div>
   );

@@ -18,6 +18,13 @@ import { StatusChip } from '../components/ui/StatusChip';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
 import { DemoDataBadge } from '../components/ui/DemoDataBadge';
+import { Tooltip } from '../components/ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../components/ui/accordion';
 import { api } from '../api/client';
 import { useStudio } from '../contexts/StudioContext';
 import { VOICE_CATALOG, type CatalogVoice } from '../data/voiceCatalog';
@@ -642,43 +649,68 @@ export function Library() {
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-line bg-surface shadow-panel">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-line text-left text-xs text-muted bg-canvas/50">
-                  <th className="px-5 py-3 font-medium">Phone Number</th>
-                  <th className="px-5 py-3 font-medium">Trunk / Provider</th>
-                  <th className="px-5 py-3 font-medium">Assigned Bot</th>
-                  <th className="px-5 py-3 font-medium">Target Environment</th>
-                  <th className="px-5 py-3 font-medium">DNIS Routing</th>
-                  <th className="px-5 py-3 font-medium text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {demoNumbers.map((num) => (
-                  <tr key={num.id} className="hover:bg-canvas/30 transition">
-                    <td className="px-5 py-4 font-mono font-medium text-ink flex items-center gap-2.5">
-                      <PhoneCallIcon className="h-4 w-4 text-accent shrink-0" />
-                      {num.number}
-                    </td>
-                    <td className="px-5 py-4 text-muted text-xs">{num.carrier}</td>
-                    <td className="px-5 py-4 font-medium text-ink text-xs">{num.assignedBot}</td>
-                    <td className="px-5 py-4 text-xs">
-                      <span className="capitalize rounded-full bg-subtle px-2.5 py-0.5 text-[11px] font-medium text-ink-soft">
-                        {num.environment}
-                      </span>
-                    </td>
-                    <td className="px-5 py-4 font-mono text-xs text-muted">{num.dnis}</td>
-                    <td className="px-5 py-4 text-right">
-                      <StatusChip tone={num.status === 'active' ? 'success' : 'neutral'}>
-                        {num.status === 'active' ? 'Serving Calls' : num.status}
-                      </StatusChip>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Accordion
+            items={demoNumbers}
+            onReorder={setDemoNumbers}
+            enableReordering={true}
+            enableDragAndDrop={true}
+            pagination={{
+              page: 1,
+              pageSize: 5,
+              totalItems: demoNumbers.length,
+              onPageChange: () => {},
+              pageSizeOptions: [3, 5, 10],
+            }}
+          >
+            {demoNumbers.map((num, idx, arr) => {
+              const isFirst = idx === 0;
+              const isLast = idx === arr.length - 1;
+
+              return (
+                <AccordionItem
+                  key={num.id}
+                  id={num.id}
+                  index={idx}
+                  isFirst={isFirst}
+                  isLast={isLast}
+                >
+                  <AccordionHeader
+                    id={num.id}
+                    icon={<PhoneCallIcon className="h-4 w-4 text-accent" />}
+                    title={num.number}
+                    subtitle={`Carrier: ${num.carrier} · Assigned: ${num.assignedBot} · DNIS: ${num.dnis}`}
+                    badge={
+                      <div className="flex items-center gap-1.5">
+                        <StatusChip tone={num.status === 'active' ? 'success' : 'neutral'}>
+                          {num.status === 'active' ? 'Serving Calls' : num.status}
+                        </StatusChip>
+                        <span className="capitalize rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink-soft">
+                          {num.environment}
+                        </span>
+                      </div>
+                    }
+                  />
+
+                  <AccordionContent>
+                    <div className="grid gap-4 sm:grid-cols-3 text-xs">
+                      <div className="rounded-lg border border-line bg-surface p-3">
+                        <span className="text-muted block">Assigned Agent</span>
+                        <span className="text-ink font-semibold mt-1 block">{num.assignedBot}</span>
+                      </div>
+                      <div className="rounded-lg border border-line bg-surface p-3">
+                        <span className="text-muted block">DNIS Routing Target</span>
+                        <span className="text-ink font-mono mt-1 block">{num.dnis}</span>
+                      </div>
+                      <div className="rounded-lg border border-line bg-surface p-3">
+                        <span className="text-muted block">SIP Trunk Carrier</span>
+                        <span className="text-ink font-medium mt-1 block">{num.carrier}</span>
+                      </div>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
         </div>
       )}
 

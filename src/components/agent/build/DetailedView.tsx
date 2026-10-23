@@ -9,6 +9,13 @@ import { AgentRolesEditor } from './AgentRolesEditor';
 import { ToolsEditor } from './ToolsEditor';
 import { Toggle } from '../../ui/Toggle';
 import { StatusChip } from '../../ui/StatusChip';
+import { Tooltip } from '../../ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../../ui/accordion';
 import { issuesAt } from '../../../utils/validate';
 import { cn, inputClass } from '../../../utils/styles';
 
@@ -25,8 +32,13 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
   const [query, setQuery] = useState('');
   const { config, validation, update, canEdit } = editor;
 
+  const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>(() =>
+    settingGroups.map((g) => g.id)
+  );
+
   useEffect(() => {
     if (!initialGroup) return;
+    setExpandedGroupIds((prev) => Array.from(new Set([...prev, initialGroup])));
     const t = window.setTimeout(() => document.getElementById(`group-${initialGroup}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 40);
     return () => window.clearTimeout(t);
   }, [initialGroup]);
@@ -72,6 +84,7 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
                   onClick={(e) => {
                     e.preventDefault();
                     setQuery('');
+                    setExpandedGroupIds((prev) => Array.from(new Set([...prev, g.id])));
                     window.setTimeout(() => document.getElementById(`group-${g.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0);
                   }}
                   className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] text-ink-soft transition-colors duration-150 hover:bg-subtle hover:text-ink">
@@ -99,26 +112,82 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
 
         {groups.length === 0 && <p className="py-12 text-center text-sm text-muted">No settings match “{query}”.</p>}
 
-        <div className="mt-2">
-          {groups.map(({ group, fields, showCollection }) =>
-          <section key={group.id} id={`group-${group.id}`} aria-labelledby={`h-${group.id}`} className="scroll-mt-44 border-b border-line py-8 last:border-0">
-              <div className="mb-5 flex flex-wrap items-baseline gap-2">
-                <h2 id={`h-${group.id}`} className="text-[15px] font-semibold text-ink">{group.label}</h2>
-                {group.id === 'engine' && <StatusChip>Expert</StatusChip>}
-                <p className="w-full text-[13px] text-muted">{group.description}</p>
-              </div>
-              <div className="space-y-5">
-                {fields.map((def) =>
-              <SettingField key={def.path} def={def} config={config} errors={validation.errors} warnings={validation.warnings} technical={technicalNames} disabled={disabled} update={update} />
-              )}
-                {showCollection && group.collection === 'channels' && <ChannelsEditor config={config} errors={validation.errors} disabled={disabled} technical={technicalNames} update={update} />}
-                {showCollection && group.collection === 'agents' &&
-              <AgentRolesEditor config={config} errors={validation.errors} warnings={validation.warnings} disabled={disabled} technical={technicalNames} update={update} />
-              }
-                {showCollection && group.collection === 'tools' && <ToolsEditor config={config} disabled={disabled} update={update} onOpenJson={onOpenJson} />}
-              </div>
-            </section>
-          )}
+        <div className="mt-4">
+          <Accordion
+            expandedIds={expandedGroupIds}
+            onExpandedChange={setExpandedGroupIds}
+            enableReordering={false}
+          >
+            {groups.map(({ group, fields, showCollection }, idx) => {
+              const count = groupErrorCount(group.id);
+              return (
+                <div key={group.id} id={`group-${group.id}`} className="scroll-mt-44 mb-3">
+                  <AccordionItem id={group.id} index={idx}>
+                    <AccordionHeader
+                      id={group.id}
+                      title={group.label}
+                      subtitle={group.description}
+                      badge={
+                        <div className="flex items-center gap-1.5">
+                          {group.id === 'engine' && <StatusChip>Expert</StatusChip>}
+                          {count > 0 && (
+                            <StatusChip tone="danger" dot>
+                              {count} {count === 1 ? 'issue' : 'issues'}
+                            </StatusChip>
+                          )}
+                        </div>
+                      }
+                      showDragHandle={false}
+                      showMoveControls={false}
+                    />
+                    <AccordionContent>
+                      <div className="space-y-5">
+                        {fields.map((def) => (
+                          <SettingField
+                            key={def.path}
+                            def={def}
+                            config={config}
+                            errors={validation.errors}
+                            warnings={validation.warnings}
+                            technical={technicalNames}
+                            disabled={disabled}
+                            update={update}
+                          />
+                        ))}
+                        {showCollection && group.collection === 'channels' && (
+                          <ChannelsEditor
+                            config={config}
+                            errors={validation.errors}
+                            disabled={disabled}
+                            technical={technicalNames}
+                            update={update}
+                          />
+                        )}
+                        {showCollection && group.collection === 'agents' && (
+                          <AgentRolesEditor
+                            config={config}
+                            errors={validation.errors}
+                            warnings={validation.warnings}
+                            disabled={disabled}
+                            technical={technicalNames}
+                            update={update}
+                          />
+                        )}
+                        {showCollection && group.collection === 'tools' && (
+                          <ToolsEditor
+                            config={config}
+                            disabled={disabled}
+                            update={update}
+                            onOpenJson={onOpenJson}
+                          />
+                        )}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </div>
+              );
+            })}
+          </Accordion>
         </div>
       </div>
     </div>);

@@ -18,6 +18,7 @@ import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 import { BreadcrumbProvider } from './contexts/BreadcrumbContext';
 import { Analytics } from './pages/Analytics';
+import { Live } from './pages/Live';
 
 interface AppProps {
   role?: 'admin' | 'editor' | 'viewer';
@@ -40,6 +41,7 @@ export function App({ role = 'admin', simulateConflict = false, testBackend = 's
                       <Route index element={<Home />} />
                       <Route path="agents" element={<Agents />} />
                       <Route path="agents/:agentId/*" element={<AgentWorkspace />} />
+                      <Route path="live" element={<Live />} />
                       <Route path="knowledge" element={<Knowledge />} />
                       <Route path="calls" element={<Calls />} />
                       <Route path="calls/:callId" element={<CallDetail />} />

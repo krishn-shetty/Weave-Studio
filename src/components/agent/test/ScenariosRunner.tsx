@@ -2,22 +2,24 @@ import React, { useEffect, useState } from 'react';
 import { toast } from '../../ui/Toast';
 import {
   CheckCircle2Icon,
-  ChevronRightIcon,
   CircleAlertIcon,
-  ClockIcon,
   FlaskConicalIcon,
-  LayersIcon,
   LoaderCircleIcon,
   PlayIcon,
   PlusIcon,
   RefreshCwIcon,
-  ServerIcon,
   XCircleIcon,
 } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { StatusChip } from '../../ui/StatusChip';
 import { Dialog } from '../../ui/Dialog';
-import { formatDateTime } from '../../../utils/format';
+import { Tooltip } from '../../ui/Tooltip';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionHeader,
+  AccordionItem,
+} from '../../ui/accordion';
 import { cn, inputClass } from '../../../utils/styles';
 import { api } from '../../../api/client';
 import type { Scenario, TestRun } from '../../../api/types';
@@ -29,11 +31,14 @@ interface ScenariosRunnerProps {
 export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [runs, setRuns] = useState<TestRun[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState<string>('');
   const [runningId, setRunningId] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [newScenarioOpen, setNewScenarioOpen] = useState(false);
+
+  // Pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
 
   // New Scenario form state
   const [newName, setNewName] = useState('');
@@ -51,9 +56,6 @@ export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
 
       if (testsRes.status === 'fulfilled' && testsRes.value && Array.isArray(testsRes.value.scenarios)) {
         setScenarios(testsRes.value.scenarios);
-        if (testsRes.value.scenarios.length > 0 && !selectedScenarioId) {
-          setSelectedScenarioId(testsRes.value.scenarios[0].id);
-        }
       }
 
       if (runsRes.status === 'fulfilled' && Array.isArray(runsRes.value)) {
@@ -69,8 +71,6 @@ export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
   useEffect(() => {
     fetchScenarios();
   }, [agentId]);
-
-  const selectedScenario = scenarios.find((s) => s.id === selectedScenarioId) ?? scenarios[0];
 
   const runScenario = async (sc: Scenario) => {
     setRunningId(sc.id);
@@ -144,13 +144,23 @@ export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
     };
 
     setScenarios((prev) => [created, ...prev]);
-    setSelectedScenarioId(newId);
     setNewScenarioOpen(false);
     setNewName('');
     setNewDesc('');
     setNewUserMsg('');
     setNewExpectedReply('');
     toast.success(`Scenario "${created.name}" created`);
+  };
+
+  const totalPages = Math.max(1, Math.ceil(scenarios.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const visibleScenarios = scenarios.slice(startIndex, startIndex + pageSize);
+
+  const handleReorder = (newVisible: typeof visibleScenarios) => {
+    const next = [...scenarios];
+    next.splice(startIndex, visibleScenarios.length, ...newVisible);
+    setScenarios(next);
   };
 
   return (
@@ -205,93 +215,116 @@ export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
           </Button>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
-          {/* List of Scenarios */}
-          <div className="space-y-2">
-            {scenarios.map((sc) => {
-              const isSelected = sc.id === selectedScenarioId;
+        /* Uniform Accordion for Scenarios */
+        <div>
+          <Accordion
+            items={visibleScenarios}
+            onReorder={handleReorder}
+            enableReordering={true}
+            enableDragAndDrop={true}
+            defaultExpandedIds={visibleScenarios[0] ? [visibleScenarios[0].id] : []}
+            pagination={{
+              page: safePage,
+              pageSize,
+              totalItems: scenarios.length,
+              onPageChange: (p) => setPage(p),
+              onPageSizeChange: (s) => {
+                setPageSize(s);
+                setPage(1);
+              },
+              pageSizeOptions: [3, 5, 10],
+            }}
+          >
+            {visibleScenarios.map((sc, idx) => {
+              const isFirst = idx === 0;
+              const isLast = idx === visibleScenarios.length - 1;
               const isRunning = runningId === sc.id;
               const status = sc.last_result?.status;
 
               return (
-                <div
+                <AccordionItem
                   key={sc.id}
-                  onClick={() => setSelectedScenarioId(sc.id)}
-                  className={cn(
-                    'group cursor-pointer rounded-lg border p-3 transition-colors',
-                    isSelected ? 'border-accent bg-accent-soft/30' : 'border-line bg-surface hover:bg-subtle'
-                  )}
+                  id={sc.id}
+                  index={idx}
+                  isFirst={isFirst}
+                  isLast={isLast}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-ink truncate">{sc.name}</p>
-                      {sc.description && <p className="text-[11px] text-muted truncate mt-0.5">{sc.description}</p>}
+                  <AccordionHeader
+                    id={sc.id}
+                    icon={<FlaskConicalIcon className="h-4 w-4 text-accent" />}
+                    title={sc.name}
+                    subtitle={sc.description || `${sc.steps?.length || 0} assertions defined`}
+                    badge={
+                      isRunning ? (
+                        <span className="flex items-center gap-1 rounded bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+                          <LoaderCircleIcon className="h-3 w-3 animate-spin" />
+                          Executing
+                        </span>
+                      ) : status === 'passed' ? (
+                        <StatusChip tone="success" dot>Passed</StatusChip>
+                      ) : status === 'failed' ? (
+                        <StatusChip tone="danger" dot>Failed</StatusChip>
+                      ) : (
+                        <StatusChip tone="neutral">Unrun</StatusChip>
+                      )
+                    }
+                    actions={
+                      <Tooltip content="Execute this test scenario immediately" position="top">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => runScenario(sc)}
+                          disabled={isRunning}
+                          className="h-8 px-2.5 text-xs"
+                        >
+                          {isRunning ? (
+                            <>
+                              <LoaderCircleIcon className="h-3 w-3 animate-spin mr-1" />
+                              Running…
+                            </>
+                          ) : (
+                            <>
+                              <PlayIcon className="h-3 w-3 mr-1" />
+                              Run
+                            </>
+                          )}
+                        </Button>
+                      </Tooltip>
+                    }
+                  />
+
+                  <AccordionContent>
+                    <div className="space-y-4">
+                      {sc.steps && sc.steps.length > 0 ? (
+                        <div>
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted mb-2">
+                            Conversation Steps & Assertions
+                          </h4>
+                          <ol className="space-y-2.5">
+                            {sc.steps.map((st, i) => (
+                              <li key={i} className="rounded-lg border border-line bg-surface p-3 text-xs">
+                                <span className="font-semibold text-accent uppercase tracking-wider block mb-1">
+                                  Step {i + 1} ({st.role === 'caller' ? 'Caller Speech' : 'Expected Agent Reply'})
+                                </span>
+                                <p className="text-ink font-medium">{st.text}</p>
+                                {st.check && (
+                                  <div className="mt-2 rounded bg-subtle p-2 text-[11px] font-mono text-muted">
+                                    Assertion: {st.check.kind} (expected: {st.check.expected})
+                                  </div>
+                                )}
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted">No custom steps defined for this scenario.</p>
+                      )}
                     </div>
-                    {isRunning ? (
-                      <LoaderCircleIcon className="h-4 w-4 animate-spin text-accent shrink-0" />
-                    ) : status === 'passed' ? (
-                      <CheckCircle2Icon className="h-4 w-4 text-green-500 shrink-0" />
-                    ) : status === 'failed' ? (
-                      <XCircleIcon className="h-4 w-4 text-red-500 shrink-0" />
-                    ) : (
-                      <StatusChip tone="neutral">Unrun</StatusChip>
-                    )}
-                  </div>
-                </div>
+                  </AccordionContent>
+                </AccordionItem>
               );
             })}
-          </div>
-
-          {/* Selected Scenario Detail */}
-          {selectedScenario && (
-            <div className="rounded-xl border border-line bg-surface p-6 shadow-panel">
-              <div className="flex items-center justify-between border-b border-line pb-4">
-                <div>
-                  <h3 className="text-base font-semibold text-ink">{selectedScenario.name}</h3>
-                  <p className="text-xs text-muted mt-0.5">{selectedScenario.description || 'Automated regression test'}</p>
-                </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => runScenario(selectedScenario)}
-                  disabled={runningId === selectedScenario.id}
-                >
-                  {runningId === selectedScenario.id ? (
-                    <>
-                      <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" />
-                      Testing…
-                    </>
-                  ) : (
-                    <>
-                      <PlayIcon className="h-3.5 w-3.5" />
-                      Run Scenario
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              {selectedScenario.steps && selectedScenario.steps.length > 0 && (
-                <div className="mt-6 space-y-4">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">Steps & Assertions</h4>
-                  <ol className="space-y-3">
-                    {selectedScenario.steps.map((st, i) => (
-                      <li key={i} className="rounded-lg border border-line bg-canvas p-3 text-xs">
-                        <span className="font-semibold text-accent uppercase tracking-wider block mb-1">
-                          Step {i + 1} ({st.role})
-                        </span>
-                        <p className="text-ink">{st.text}</p>
-                        {st.check && (
-                          <div className="mt-2 rounded bg-subtle p-2 text-[11px] font-mono text-muted">
-                            Check: {st.check.kind} (expected: {st.check.expected})
-                          </div>
-                        )}
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              )}
-            </div>
-          )}
+          </Accordion>
         </div>
       )}
 
