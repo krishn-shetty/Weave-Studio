@@ -44,3 +44,24 @@ export function toCallRecord(c: CallSummaryItem, agentId: string): CallRecord {
     errors: [],
   };
 }
+
+export interface CallSummary {
+  calls: number;
+  /** Shares of the calls that have ended (hand-over, cut off); null when none has ended. */
+  handoverRate: number | null;
+  cutoffRate: number | null;
+  inProgress: number;
+}
+
+/** Counts and rates over a set of calls. Calls still in progress are counted but left out of the rates. */
+export function summarizeCalls(calls: CallRecord[]): CallSummary {
+  const finished = calls.filter((c) => c.outcome !== 'in_progress');
+  const share = (outcome: CallRecord['outcome']) =>
+    finished.length ? finished.filter((c) => c.outcome === outcome).length / finished.length : null;
+  return {
+    calls: calls.length,
+    handoverRate: share('handed_over'),
+    cutoffRate: share('cut_off'),
+    inProgress: calls.length - finished.length,
+  };
+}

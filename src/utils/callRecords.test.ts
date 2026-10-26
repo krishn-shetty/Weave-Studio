@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CallSummaryItem } from '../api/types';
-import { callChannel, callEnvironment, callOutcome, toCallRecord } from './callRecords';
+import { callChannel, callEnvironment, callOutcome, summarizeCalls, toCallRecord } from './callRecords';
 
 describe('callOutcome', () => {
   it('reads the end of a call', () => {
@@ -64,5 +64,27 @@ describe('toCallRecord', () => {
 
   it('uses the listing agent when the record has no bot', () => {
     expect(toCallRecord({ ...item, bot: undefined }, 'fallback').agentId).toBe('fallback');
+  });
+});
+
+describe('summarizeCalls', () => {
+  const base = toCallRecord(
+    { id: 'c', room: 'r', bot: 'a', ref: 'production', version: '1.0.0', channel: 'web_chat', caller: 'x', started_at: '2026-10-22T08:00:00Z', status: 'ended', duration_s: 10 },
+    'a'
+  );
+  const call = (outcome: typeof base.outcome) => ({ ...base, outcome });
+
+  it('works out shares over the calls that have ended', () => {
+    expect(summarizeCalls([call('resolved'), call('handed_over'), call('cut_off'), call('resolved'), call('in_progress')])).toEqual({
+      calls: 5,
+      handoverRate: 0.25,
+      cutoffRate: 0.25,
+      inProgress: 1,
+    });
+  });
+
+  it('has no rates, not zero rates, when no call has ended', () => {
+    expect(summarizeCalls([])).toEqual({ calls: 0, handoverRate: null, cutoffRate: null, inProgress: 0 });
+    expect(summarizeCalls([call('in_progress')]).handoverRate).toBeNull();
   });
 });

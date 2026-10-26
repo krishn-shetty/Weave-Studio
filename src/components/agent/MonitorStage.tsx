@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRightIcon,
@@ -10,11 +10,8 @@ import {
   PhoneIcon,
   RefreshCwIcon,
   TableIcon,
-  TriangleAlertIcon,
 } from 'lucide-react';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
-import type { EnvironmentName, HealthSnapshot } from '../../types/studio';
-import { useAuth } from '../../contexts/AuthContext';
 import { Segmented } from '../ui/Segmented';
 import { StatusChip } from '../ui/StatusChip';
 import { Button } from '../ui/Button';
@@ -26,67 +23,65 @@ import {
   AccordionItem,
 } from '../ui/accordion';
 import { CallsTable, channelName, outcomeMeta } from '../calls/CallsTable';
-import { currentDeployments, environments, envLabel } from '../../utils/agentStatus';
 import { formatDateTime, formatDuration, formatPercent, formatShortDate } from '../../utils/format';
 import { api } from '../../api/client';
 import { cn } from '../../utils/styles';
 import type { CallRecord } from '../../types/studio';
 import { callPath } from '../../utils/routes';
-import { toCallRecord } from '../../utils/callRecords';
+import { summarizeCalls, toCallRecord } from '../../utils/callRecords';
 
 type Period = '7' | '14' | '30';
 
-const metrics: { key: keyof HealthSnapshot; label: string; kind: 'count' | 'rate'; worseWhenUp: boolean }[] = [
-  { key: 'calls', label: 'Calls', kind: 'count', worseWhenUp: false },
-  { key: 'handover_rate', label: 'Handed to a person', kind: 'rate', worseWhenUp: true },
-  { key: 'cutoff_rate', label: 'Cut off', kind: 'rate', worseWhenUp: true },
-  { key: 'tool_failures', label: 'Tool failures', kind: 'count', worseWhenUp: true },
-];
+type Scope = 'all' | 'live';
+
+/** The API returns at most this many calls per request; the figures say when they rest on a capped list. */
+const CALL_LIMIT = 50;
 
 export function MonitorStage({ editor }: { editor: DraftEditor }) {
   const agent = editor.agent!;
   const navigate = useNavigate();
-  const { can } = useAuth();
-  const live = currentDeployments(agent);
-  const liveEnvs = environments.filter((e) => live[e]);
-  const [env, setEnv] = useState<EnvironmentName>(live.production ? 'production' : liveEnvs[0] ?? 'production');
   const [period, setPeriod] = useState<Period>('7');
+  const [scope, setScope] = useState<Scope>('all');
 
-  const [realCalls, setRealCalls] = useState<CallRecord[]>([]);
+  const [fetchedCalls, setFetchedCalls] = useState<CallRecord[]>([]);
+  const [capped, setCapped] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const realCalls = scope === 'live' ? fetchedCalls.filter((c) => c.environment !== 'test') : fetchedCalls;
   const [callsViewMode, setCallsViewMode] = useState<'accordion' | 'table'>('accordion');
 
   // Pagination for monitor calls
   const [callPage, setCallPage] = useState(1);
   const [callPageSize, setCallPageSize] = useState(5);
 
-  const fetchCalls = async () => {
+  // Calls in the chosen period (GET /calls?since=), newest first.
+  const fetchCalls = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await api.listCalls(agent.id, { limit: 50 });
-      if (res && Array.isArray(res.calls)) {
-        const mapped: CallRecord[] = res.calls.map((c) => toCallRecord(c, agent.id));
-        setRealCalls(mapped);
-      }
-    } catch {
-      // ignore
+      const since = new Date(Date.now() - Number(period) * 86_400_000).toISOString();
+      const res = await api.listCalls(agent.id, { limit: CALL_LIMIT, since });
+      setFetchedCalls(res.calls.map((c) => toCallRecord(c, agent.id)));
+      setCapped(!!res.next);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Could not load the calls.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [agent.id, period]);
 
   useEffect(() => {
-    fetchCalls();
-  }, [agent.id]);
+    void fetchCalls();
+  }, [fetchCalls]);
 
-  const currentSnapshot: HealthSnapshot = {
-    calls: realCalls.length,
-    handover_rate:
-      realCalls.length > 0 ? realCalls.filter((c) => c.outcome === 'handed_over').length / realCalls.length : 0,
-    cutoff_rate:
-      realCalls.length > 0 ? realCalls.filter((c) => c.outcome === 'cut_off').length / realCalls.length : 0,
-    tool_failures: 0,
-  };
+  const summary = summarizeCalls(realCalls);
+  const rate = (r: number | null) => (r === null ? '—' : formatPercent(r));
+  const figures = [
+    { key: 'calls', label: 'Calls', value: summary.calls.toLocaleString(), note: summary.inProgress ? `${summary.inProgress} still in progress` : undefined },
+    { key: 'handover', label: 'Handed to a person', value: rate(summary.handoverRate), note: 'of calls that ended' },
+    { key: 'cutoff', label: 'Cut off', value: rate(summary.cutoffRate), note: 'of calls that ended' },
+    { key: 'tools', label: 'Tool failures', value: 'Not available yet', note: 'needs each call’s records' },
+  ];
 
   const hasData = realCalls.length > 0;
 
@@ -95,11 +90,6 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
   const callStartIndex = (safeCallPage - 1) * callPageSize;
   const visibleCalls = realCalls.slice(callStartIndex, callStartIndex + callPageSize);
 
-  const handleReorderCalls = (newVisible: typeof visibleCalls) => {
-    const next = [...realCalls];
-    next.splice(callStartIndex, visibleCalls.length, ...newVisible);
-    setRealCalls(next);
-  };
 
   const getChannelIcon = (ch: string) => {
     switch (ch) {
@@ -116,14 +106,15 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
-          {liveEnvs.length > 1 && (
-            <Segmented
-              label="Environment"
-              options={liveEnvs.map((e) => ({ value: e, label: envLabel(e) }))}
-              value={env}
-              onChange={setEnv}
-            />
-          )}
+          <Segmented
+            label="Which calls"
+            options={[
+              { value: 'all', label: 'All calls' },
+              { value: 'live', label: 'Without test conversations' },
+            ]}
+            value={scope}
+            onChange={setScope}
+          />
           <Segmented
             label="Period"
             options={[
@@ -135,15 +126,21 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
             onChange={setPeriod}
           />
         </div>
-        <StatusChip tone="info">
-          Computed from the latest {realCalls.length} calls
-        </StatusChip>
+        <Button variant="ghost" size="sm" onClick={() => void fetchCalls()} disabled={loading}>
+          <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden />
+          Refresh
+        </Button>
       </div>
 
-      {!hasData && !loading ? (
+      {error ? (
+        <div role="alert" className="mt-6 flex items-start justify-between gap-3 rounded-lg border border-danger/30 bg-danger-soft p-4 text-sm">
+          <p className="text-danger">Could not load the calls: {error}</p>
+          <Button size="sm" variant="secondary" onClick={() => void fetchCalls()}>Try again</Button>
+        </div>
+      ) : !hasData && !loading ? (
         <div className="mt-6 rounded-xl border border-line bg-surface px-6 py-14 text-center">
-          <p className="text-base font-medium text-ink">No calls recorded yet for {agent.name}</p>
-          <p className="mt-1 text-sm text-muted">Test conversations or live calls will produce health metrics here.</p>
+          <p className="text-base font-medium text-ink">No calls for {agent.name} in the last {period} days</p>
+          <p className="mt-1 text-sm text-muted">Test conversations and live calls show up here.</p>
           <Button variant="secondary" className="mt-4" onClick={() => navigate(`/agents/${agent.id}/test`)}>
             Test this agent
           </Button>
@@ -155,25 +152,26 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
               Health
             </h2>
             <p className="text-lg font-semibold text-ink">
-              {realCalls.length < 10
-                ? `Sample size: ${realCalls.length} calls (evaluating performance)`
-                : `Healthy performance across ${realCalls.length} recorded calls`}
+              {realCalls.length} {realCalls.length === 1 ? 'call' : 'calls'} in the last {period} days
+              {scope === 'live' ? ', without test conversations' : ''}
+            </p>
+            <p className="mt-0.5 text-xs text-muted">
+              {capped
+                ? `Only the newest ${CALL_LIMIT} calls are counted; there are more in this period.`
+                : 'Every call in this period is counted.'}
+              {realCalls.length > 0 && realCalls.length < 10 ? ' With this few calls, one call moves a share a lot.' : ''}
             </p>
           </div>
           <dl className="grid grid-cols-2 divide-line md:grid-cols-4 md:divide-x">
-            {metrics.map((m) => {
-              const cur = currentSnapshot[m.key];
-              return (
-                <div key={m.key} className="px-6 py-5">
-                  <dt className="text-xs font-medium text-muted">{m.label}</dt>
-                  <dd className="mt-1 flex items-baseline gap-2">
-                    <span className="text-2xl font-semibold tracking-tight text-ink">
-                      {m.kind === 'rate' ? formatPercent(cur) : cur.toLocaleString()}
-                    </span>
-                  </dd>
-                </div>
-              );
-            })}
+            {figures.map((f) => (
+              <div key={f.key} className="px-6 py-5">
+                <dt className="text-xs font-medium text-muted">{f.label}</dt>
+                <dd className="mt-1">
+                  <span className={cn('font-semibold tracking-tight', f.key === 'tools' ? 'text-sm text-muted' : 'text-2xl text-ink')}>{f.value}</span>
+                  {f.note && <span className="mt-0.5 block text-xs text-muted">{f.note}</span>}
+                </dd>
+              </div>
+            ))}
           </dl>
         </section>
       )}
@@ -224,9 +222,6 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
             <div className="mt-3">
               <Accordion
                 items={visibleCalls}
-                onReorder={handleReorderCalls}
-                enableReordering={true}
-                enableDragAndDrop={true}
                 pagination={{
                   page: safeCallPage,
                   pageSize: callPageSize,
