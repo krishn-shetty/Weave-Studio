@@ -11,6 +11,7 @@ interface NextStepBarProps {
 }
 
 const copy: Record<StageId, {text: string;cta: string;}> = {
+  overview: { text: 'Start with what it should do and how it sounds.', cta: 'Next: Build it' },
   build: { text: 'Happy with the changes? Talk to your draft to check it behaves.', cta: 'Next: Test it' },
   test: { text: 'Behaving well? Freeze this draft as a version you can deploy.', cta: 'Next: Publish' },
   release: { text: 'Once a version is live, watch how real conversations go.', cta: 'Next: Monitor' },
@@ -21,6 +22,7 @@ export function NextStepBar({ stage, agentId, onPublish }: NextStepBarProps) {
   const navigate = useNavigate();
   const { text, cta } = copy[stage];
   const handle = () => {
+    if (stage === 'overview') navigate(`/agents/${agentId}/build`);else
     if (stage === 'build') navigate(`/agents/${agentId}/test`);else
     if (stage === 'test') onPublish();else
     if (stage === 'release') navigate(`/agents/${agentId}/monitor`);else

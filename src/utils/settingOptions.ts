@@ -1,7 +1,8 @@
 import type { AgentConfig, Path } from '../types/studio';
 import type { ProvidersAnswer } from '../api/types';
 import type { SettingDef } from '../data/settingsCatalog';
-import { languages, llmProviders, sttProviders, ttsProviders, type ProviderOption } from '../data/providers';
+import { llmProviders, sttProviders, ttsProviders, type ProviderOption } from '../data/providers';
+import { LANGUAGES } from '../models/languages';
 import { VOICE_CATALOG } from '../data/voiceCatalog';
 import { missingProviderKey as providerKeyMissing, providersFor, voicesFor } from './providerOptions';
 
@@ -27,7 +28,7 @@ export function resolveOptions(def: SettingDef, config: AgentConfig, providers: 
   const models = config.defaults?.models;
   switch (def.optionsFrom) {
     case 'languages':
-      return languages.map((l) => ({ value: l.id, label: l.label }));
+      return LANGUAGES.map(([value, label]) => ({ value, label }));
     case 'llm_providers':
       return providerOptions('llm', providers, models?.llm?.provider);
     case 'llm_models':

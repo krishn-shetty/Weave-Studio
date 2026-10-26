@@ -96,15 +96,6 @@ export const ttsProviders: ProviderOption[] = [
 }];
 
 
-export const languages = [
-{ id: 'en', label: 'English' },
-{ id: 'en-GB', label: 'English (UK)' },
-{ id: 'en-US', label: 'English (US)' },
-{ id: 'en-NG', label: 'English (Nigeria)' },
-{ id: 'es-ES', label: 'Spanish (Spain)' },
-{ id: 'fr-FR', label: 'French (France)' }];
-
-
 // Connection name → secret it needs on the server.
 export const connectionSecrets: Record<string, string> = {
   crm: 'CRM_API_TOKEN',
