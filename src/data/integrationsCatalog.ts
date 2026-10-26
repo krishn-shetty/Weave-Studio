@@ -6,7 +6,6 @@ export interface IntegrationItem {
   description: string;
   defaultSecret: string;
   fields: string[];
-  docsUrl?: string;
 }
 
 export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
@@ -18,7 +17,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Enrich incoming caller sessions with customer records, lifetime value, and recent tickets.',
     defaultSecret: 'CRM_API_TOKEN',
     fields: ['Base URL', 'API Key / Bearer Token', 'Account Field Mapping'],
-    docsUrl: 'https://docs.weave.studio/integrations/crm',
   },
   {
     id: 'helpdesk',
@@ -28,7 +26,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Allow voice agents to create support tickets, look up RMA orders, and update incident statuses.',
     defaultSecret: 'HELPDESK_API_TOKEN',
     fields: ['Instance Subdomain', 'Agent Email', 'API Token'],
-    docsUrl: 'https://docs.weave.studio/integrations/helpdesk',
   },
   {
     id: 'calendar',
@@ -38,7 +35,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Enable voice agents to book appointments, check technician availability, and send invites.',
     defaultSecret: 'CALENDAR_API_TOKEN',
     fields: ['Calendar ID', 'OAuth Client Secret', 'Default Timezone'],
-    docsUrl: 'https://docs.weave.studio/integrations/calendar',
   },
   {
     id: 'webhook',
@@ -48,7 +44,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Send call lifecycle events (call_started, turn_completed, call_ended) to your HTTP webhook.',
     defaultSecret: 'WEBHOOK_SIGNING_KEY',
     fields: ['Webhook URL', 'HMAC Secret', 'Event Subscriptions'],
-    docsUrl: 'https://docs.weave.studio/integrations/webhooks',
   },
   {
     id: 'analytics',
@@ -58,7 +53,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Stream latency metrics, transcript sentiments, and tool execution telemetry to your data warehouse.',
     defaultSecret: 'ANALYTICS_WRITE_KEY',
     fields: ['Collector Ingestion URL', 'Write Key', 'Sampling Rate'],
-    docsUrl: 'https://docs.weave.studio/integrations/analytics',
   },
   {
     id: 'knowledge-sync',
@@ -68,7 +62,6 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Periodically crawl wiki pages and product manuals to keep vector stores up to date.',
     defaultSecret: 'CONFLUENCE_API_TOKEN',
     fields: ['Space Key', 'Cloud ID', 'API Token'],
-    docsUrl: 'https://docs.weave.studio/integrations/knowledge-sync',
   },
   {
     id: 'custom-api',
@@ -78,6 +71,5 @@ export const INTEGRATIONS_CATALOG: IntegrationItem[] = [
     description: 'Secure mTLS or bearer-authenticated gateway to your internal microservices for tool execution.',
     defaultSecret: 'INTERNAL_GATEWAY_KEY',
     fields: ['Service Base URL', 'Header Authentication', 'Timeout (ms)'],
-    docsUrl: 'https://docs.weave.studio/integrations/custom-api',
   },
 ];

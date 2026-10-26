@@ -14,27 +14,23 @@ import {
 import { Segmented } from '../components/ui/Segmented';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Button } from '../components/ui/Button';
-import { Dialog } from '../components/ui/Dialog';
-import { DemoDataBadge } from '../components/ui/DemoDataBadge';
 import { NumbersPanel } from '../components/library/NumbersPanel';
 import { VOICE_CATALOG, type CatalogVoice } from '../data/voiceCatalog';
-import { INTEGRATIONS_CATALOG, type IntegrationItem } from '../data/integrationsCatalog';
-import { useProviders } from '../hooks/useProviders';
+import { INTEGRATIONS_CATALOG } from '../data/integrationsCatalog';
+import { useProviders, useSecretKeys } from '../hooks/useProviders';
+import { secretState, type SecretState } from '../utils/providerOptions';
 import { cn, inputClass } from '../utils/styles';
 
 type Tab = 'voices' | 'providers' | 'integrations' | 'numbers';
 
-interface ConfiguredIntegration {
-  id: string;
-  endpoint: string;
-  secretName: string;
-  updatedAt: string;
-}
+const secretNote = (state: SecretState) =>
+  state === 'found' ? 'Set on the server' : state === 'missing' ? 'Not set on the server' : 'Checked when you deploy';
 
 export function Library() {
   const [tab, setTab] = useState<Tab>('voices');
 
-  // GET /providers, shared with the pickers in Build
+  // GET /providers, shared with the pickers in Build (and the secret checks below)
+  const secretKeys = useSecretKeys();
   const { answer: providersAnswer, error: providersError, loading: loadingProviders, reload: loadProviders } = useProviders();
   const providers = useMemo(() => providersAnswer?.providers ?? [], [providersAnswer]);
 
@@ -50,18 +46,6 @@ export function Library() {
   // Integrations State
   const [integrationFilter, setIntegrationFilter] = useState('All');
   const [integrationQuery, setIntegrationQuery] = useState('');
-  const [configuredIntegrations, setConfiguredIntegrations] = useState<Record<string, ConfiguredIntegration>>(() => {
-    try {
-      const saved = localStorage.getItem('weave_configured_integrations');
-      return saved ? JSON.parse(saved) : {};
-    } catch {
-      return {};
-    }
-  });
-  const [activeModalIntegration, setActiveModalIntegration] = useState<IntegrationItem | null>(null);
-  const [modalEndpoint, setModalEndpoint] = useState('');
-  const [modalSecret, setModalSecret] = useState('');
-
   // Cleanup audio playback on unmount
   useEffect(() => {
     return () => {
@@ -136,26 +120,6 @@ export function Library() {
     });
     return map;
   }, [providers]);
-
-  // Integrations save
-  const handleSaveIntegration = () => {
-    if (!activeModalIntegration) return;
-    const updated = {
-      ...configuredIntegrations,
-      [activeModalIntegration.id]: {
-        id: activeModalIntegration.id,
-        endpoint: modalEndpoint,
-        secretName: modalSecret || activeModalIntegration.defaultSecret,
-        updatedAt: new Date().toISOString(),
-      },
-    };
-    setConfiguredIntegrations(updated);
-    localStorage.setItem('weave_configured_integrations', JSON.stringify(updated));
-    toast.success(`Configured ${activeModalIntegration.name}`, {
-      description: `Connection settings saved locally for agent tool execution.`,
-    });
-    setActiveModalIntegration(null);
-  };
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
@@ -430,11 +394,10 @@ export function Library() {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-ink">Connected Systems & Tool Integrations</h2>
-                  <DemoDataBadge label="Interactive Catalog" detail="Configures connection variables for tools used in agent configs." />
+                  <h2 className="text-base font-semibold text-ink">Systems your tools can call</h2>
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
-                  Connect third-party customer databases, ticketing systems, calendars, and webhooks so agents can run tools.
+                  Studio does not connect these itself. An agent reaches a system through an HTTP tool you add in Build; the key it uses is a secret an admin sets on the server under the name shown.
                 </p>
               </div>
             </div>
@@ -478,7 +441,6 @@ export function Library() {
                 item.description.toLowerCase().includes(integrationQuery.toLowerCase());
               return matchCat && matchQ;
             }).map((item) => {
-              const config = configuredIntegrations[item.id];
               return (
                 <div key={item.id} className="rounded-xl border border-line bg-surface p-5 shadow-panel flex flex-col justify-between">
                   <div>
@@ -492,9 +454,6 @@ export function Library() {
                           <span className="text-[10px] text-muted block uppercase font-medium">{item.category}</span>
                         </div>
                       </div>
-                      <StatusChip tone={config ? 'success' : 'neutral'}>
-                        {config ? 'Connected' : 'Available'}
-                      </StatusChip>
                     </div>
 
                     <p className="mt-3 text-xs text-ink-soft leading-relaxed">
@@ -502,7 +461,7 @@ export function Library() {
                     </p>
 
                     <div className="mt-4 space-y-1.5">
-                      <span className="text-[10px] text-muted font-medium uppercase tracking-wider block">Required Config</span>
+                      <span className="text-[10px] text-muted font-medium uppercase tracking-wider block">What the tool needs</span>
                       {item.fields.map((f) => (
                         <div key={f} className="flex items-center gap-1.5 text-xs text-muted">
                           <span className="h-1 w-1 rounded-full bg-accent" />
@@ -517,17 +476,7 @@ export function Library() {
                       <KeyRoundIcon className="h-3 w-3" />
                       {item.defaultSecret}
                     </span>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setActiveModalIntegration(item);
-                        setModalEndpoint(config?.endpoint || '');
-                        setModalSecret(config?.secretName || item.defaultSecret);
-                      }}
-                    >
-                      {config ? 'Edit Config' : 'Connect'}
-                    </Button>
+                    <span className="text-[11px] text-muted">{secretNote(secretState(item.defaultSecret, secretKeys))}</span>
                   </div>
                 </div>
               );
@@ -537,54 +486,6 @@ export function Library() {
       )}
 
       {tab === 'numbers' && <NumbersPanel />}
-
-      {/* Integration Connection Modal */}
-      {activeModalIntegration && (
-        <Dialog
-          open={!!activeModalIntegration}
-          onClose={() => setActiveModalIntegration(null)}
-          title={`Configure ${activeModalIntegration.name}`}
-          description="Enter your system endpoint and secret variable name. Values are stored securely for agent tool invocations."
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setActiveModalIntegration(null)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleSaveIntegration}>
-                Save Connection
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-ink-soft block mb-1">Service Endpoint URL</label>
-              <input
-                type="url"
-                placeholder="https://api.yourdomain.com/v1"
-                value={modalEndpoint}
-                onChange={(e) => setModalEndpoint(e.target.value)}
-                className={cn(inputClass, 'text-xs')}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-ink-soft block mb-1">
-                Environment Secret Name
-              </label>
-              <input
-                type="text"
-                placeholder={activeModalIntegration.defaultSecret}
-                value={modalSecret}
-                onChange={(e) => setModalSecret(e.target.value)}
-                className={cn(inputClass, 'font-mono text-xs')}
-              />
-              <p className="mt-1 text-[11px] text-muted">
-                The actual API key is injected server-side by the runtime using this environment variable.
-              </p>
-            </div>
-          </div>
-        </Dialog>
-      )}
 
     </div>
   );
