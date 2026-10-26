@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { AgentConfig, Draft, Path, ValidationReport } from '../types/studio';
+import type { AgentConfig, Draft, Path } from '../types/studio';
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
-import { validateConfig } from '../utils/validate';
 import { putAt } from '../utils/path';
 import { canSave as canSaveNow, initialSave, isDirty, saveLabel, saveReducer } from '../utils/saveState';
 import { api } from '../api/client';
+import { putValidation } from '../utils/serverValidation';
+import { draftKey, useServerValidation } from './useServerValidation';
 
 /** How often the editor asks the server whether someone else saved a newer draft. */
 const REMOTE_CHECK_MS = 15_000;
@@ -35,10 +36,6 @@ export function useDraftEditor(agentId: string) {
   const [conflict, setConflict] = useState<Draft | null>(null);
   // A newer draft someone else saved, found by checking the server (not by saving).
   const [remoteDraft, setRemoteDraft] = useState<Draft | null>(null);
-  // The server's report on what was last saved (PUT /draft returns it), and the config it is about.
-  const [serverReport, setServerReport] = useState<{ json: string; report: ValidationReport } | null>(null);
-  const [localReport, setLocalReport] = useState<ValidationReport | null>(() => (config ? validateConfig(config) : null));
-  const [validating, setValidating] = useState(false);
   // The JSON view's text when it is not valid JSON: nothing can be saved until it is fixed.
   const [parseError, setParseError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
@@ -75,7 +72,6 @@ export function useDraftEditor(agentId: string) {
     const a = getAgent(agentId);
     if (!a) return;
     loadServerDraft(a.draft);
-    setServerReport(null);
     setHistory([]);
     setFuture([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,19 +92,12 @@ export function useDraftEditor(agentId: string) {
     dispatch({ type: 'edited', json: currentJson });
   }, [currentJson]);
 
-  // Debounced local check (~500 ms after typing stops).
-  useEffect(() => {
-    if (!config) return;
-    setValidating(true);
-    const t = window.setTimeout(() => {
-      setLocalReport(validateConfig(config));
-      setValidating(false);
-    }, 500);
-    return () => window.clearTimeout(t);
-  }, [config]);
-
-  // The server's report while it describes the editor's contents, else the local check.
-  const validation = serverReport && serverReport.json === currentJson ? serverReport.report : localReport;
+  // The server's checks on the editor's contents (POST /validate, 500 ms after the last change, and on opening). The
+  // server is the authority; nothing is refused on a list of the studio's own.
+  const editorKey = `editor:${agentId}`;
+  const validationView = useServerValidation(editorKey, config);
+  // The report for exactly what is in the editor, or the last one while the new one is coming.
+  const validation = validationView.report ?? validationView.previous;
 
   // Saves run one at a time, so each one sends the revision the previous one got back.
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
@@ -131,7 +120,8 @@ export function useDraftEditor(agentId: string) {
           setSavedAt(res.draft.saved_at);
           setConflict(null);
           setRemoteDraft(null);
-          setServerReport({ json, report: res.validation });
+          putValidation(editorKey, current, res.validation);
+          putValidation(draftKey(agentId), current, res.validation);
           dispatch({ type: 'save_succeeded', savedJson: json });
           return true;
         }
@@ -143,7 +133,7 @@ export function useDraftEditor(agentId: string) {
         return false;
       }
     },
-    [agentId, saveDraft, canEdit]
+    [agentId, saveDraft, canEdit, editorKey]
   );
   const performSave = useCallback(
     (overwrite = false): Promise<boolean> => {
@@ -331,8 +321,10 @@ export function useDraftEditor(agentId: string) {
   return {
     agent,
     config,
+    /** The server's report (null until it has answered once); see validationView for whether it is current. */
     validation,
-    validating,
+    validationView,
+    validating: validationView.status === 'checking' || validationView.status === 'unknown',
     /** The save state machine's state (idle, dirty, saving, saved, conflict, error). */
     saveState: machine.state,
     saveLabel: saveLabel(machine),

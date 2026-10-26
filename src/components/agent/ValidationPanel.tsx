@@ -1,20 +1,49 @@
 import React from 'react';
 import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react';
-import type { AgentConfig, Issue, Path, ValidationReport } from '../../types/studio';
+import type { AgentConfig, Issue, Path } from '../../types/studio';
+import type { ValidationView } from '../../utils/serverValidation';
 import { describePath } from '../../utils/validate';
 import { secretState } from '../../utils/providerOptions';
 import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
 
 interface ValidationPanelProps {
-  validation: ValidationReport;
-  validating: boolean;
+  view: ValidationView;
   config: AgentConfig;
   onGoTo: (path: Path) => void;
 }
 
-export function ValidationPanel({ validation, validating, config, onGoTo }: ValidationPanelProps) {
+/** The server's checks on the draft in the editor (POST /validate, or the report Save returned). */
+export function ValidationPanel({ view, config, onGoTo }: ValidationPanelProps) {
   const keys = useSecretKeys();
+  const validation = view.report ?? view.previous;
+  const validating = view.status === 'checking' || view.status === 'unknown';
+
+  if (!validation) {
+    return (
+      <section aria-labelledby="checks-title" className="rounded-xl border border-line bg-surface">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3">
+          <h2 id="checks-title" className="text-sm font-semibold text-ink">Checks</h2>
+          <span className="flex items-center gap-1.5 text-xs text-muted" aria-live="polite">
+            {view.status === 'failed' ? 'Could not check' : <><LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" aria-hidden />Checking…</>}
+          </span>
+        </div>
+        {view.status === 'failed' ?
+        <div className="px-4 py-4" role="alert">
+            <p className="text-sm text-ink">The server’s checks could not be run.</p>
+            <p className="mt-1 text-[13px] text-muted">{view.error}</p>
+            <p className="mt-2 text-[13px] text-muted">They run again when you change something. Publishing is still decided by the server.</p>
+          </div> :
+
+        <div className="space-y-3 px-4 py-4" aria-busy="true">
+            <div className="h-4 w-3/4 animate-pulse rounded bg-subtle" />
+            <div className="h-4 w-1/2 animate-pulse rounded bg-subtle" />
+            <div className="h-4 w-2/3 animate-pulse rounded bg-subtle" />
+          </div>
+        }
+      </section>);
+
+  }
   const clean = validation.valid && validation.warnings.length === 0 && validation.unsupported.length === 0;
 
   return (
@@ -28,7 +57,7 @@ export function ValidationPanel({ validation, validating, config, onGoTo }: Vali
               Checking…
             </> :
 
-          'Up to date'
+          view.status === 'failed' ? 'Could not check the latest changes' : 'Checked by the server'
           }
         </span>
       </div>
@@ -37,14 +66,14 @@ export function ValidationPanel({ validation, validating, config, onGoTo }: Vali
         {clean &&
         <div className="flex gap-2.5">
             <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
-            <p className="text-sm text-ink-soft">No problems. This draft can be tested and published.</p>
+            <p className="text-sm text-ink-soft">The server found no problems.</p>
           </div>
         }
 
         {validation.errors.length > 0 &&
         <IssueGroup
           title={`${validation.errors.length} ${validation.errors.length === 1 ? 'error' : 'errors'}`}
-          hint="Block testing and publishing. Saving still works."
+          hint="The server will not publish until these are fixed. Saving still works."
           tone="danger"
           issues={validation.errors}
           config={config}
@@ -68,8 +97,11 @@ export function ValidationPanel({ validation, validating, config, onGoTo }: Vali
             <h3 className="text-[13px] font-semibold text-warning">Not available yet</h3>
             <ul className="mt-2 space-y-2">
               {validation.unsupported.map((u) =>
-            <li key={u.where} className="rounded-md bg-warning-soft px-3 py-2 text-[13px] text-ink-soft">
-                  This agent uses <span className="font-medium text-ink">{u.feature}</span>, which the runtime can’t run yet. It will be skipped on calls.
+            <li key={u.where} className={cn('rounded-md px-3 py-2 text-[13px] text-ink-soft', u.severity === 'security' ? 'border border-danger/40 bg-danger-soft' : 'bg-warning-soft')}>
+                  {u.severity === 'security' ?
+              <><span className="font-semibold text-danger">Not protected yet: </span><span className="font-medium text-ink">{u.feature}</span> is set up but the runtime does not enforce it yet. Callers are not protected by it.</> :
+              <>This agent uses <span className="font-medium text-ink">{u.feature}</span>, which the runtime can’t run yet. It will be skipped on calls.</>
+              }
                   <span className="mt-0.5 block font-mono text-xs text-muted">{u.where}</span>
                 </li>
             )}

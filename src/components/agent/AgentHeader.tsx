@@ -27,11 +27,11 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
   const { can } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
   const agent = editor.agent;
-  if (!agent || !editor.validation) return null;
+  if (!agent) return null;
   const latest = latestVersion(agent);
   const current = currentDeployments(agent);
   const live = environments.filter((e) => current[e]);
-  const { validation } = editor;
+  const view = editor.validationView;
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
@@ -42,14 +42,17 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[13px] text-muted" aria-live="polite">
               <SaveIndicator editor={editor} />
               <span aria-hidden className="text-line-strong">|</span>
-              {editor.validating ?
-              <span className="text-muted">Checking…</span> :
-              validation.valid ?
-              <StatusChip tone="success" dot>Valid</StatusChip> :
+              {view.status === 'checked' && view.report ?
+              view.report.valid ?
+              <StatusChip tone="success" dot>Checks pass</StatusChip> :
 
               <StatusChip tone="danger" dot>
-                  {validation.errors.length} {validation.errors.length === 1 ? 'problem' : 'problems'}
-                </StatusChip>
+                    {view.report.errors.length} {view.report.errors.length === 1 ? 'problem' : 'problems'}
+                  </StatusChip> :
+
+              view.status === 'failed' ?
+              <span className="text-warning" title={view.error ?? undefined}>Could not check</span> :
+              <span className="text-muted">Checking…</span>
               }
               <span aria-hidden className="text-line-strong">|</span>
               <span>{latest ? <>Latest <span className="font-mono text-ink">{latest.version}</span></> : 'Not published yet'}</span>

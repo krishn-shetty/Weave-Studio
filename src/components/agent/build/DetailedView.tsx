@@ -30,7 +30,9 @@ const collectionRoot = { tools: 'tools', agents: 'agents', channels: 'channels' 
 export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewProps) {
   const { technicalNames, setTechnicalNames } = useStudio();
   const [query, setQuery] = useState('');
-  const { config, validation, update, canEdit } = editor;
+  const { config, update, canEdit } = editor;
+  // Field problems come from the server's report (none shown until it has answered).
+  const validation = { errors: editor.validation?.errors ?? [], warnings: editor.validation?.warnings ?? [] };
 
   const [expandedGroupIds, setExpandedGroupIds] = useState<string[]>(() =>
     settingGroups.map((g) => g.id)
@@ -52,7 +54,7 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
     [needle]
   );
 
-  if (!config || !validation) return null;
+  if (!config) return null;
   const disabled = !canEdit;
 
   const groups = settingGroups.

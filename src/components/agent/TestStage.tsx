@@ -20,19 +20,19 @@ interface TestStageProps {
 export function TestStage({ editor, onGoToField }: TestStageProps) {
   const navigate = useNavigate();
   const config = editor.config!;
-  const validation = editor.validation!;
+  const validation = editor.validationView.report;
   const session = useTestSession(editor.agent!.id, config, editor.baseRevision);
   const hasWebChannel = (config.channels ?? []).some((c) => c.enabled && isWebChannel(c.type));
 
   let blocker: React.ReactNode = null;
-  if (!validation.valid) {
-    blocker = (
-      <Blocker
-        icon={<CircleAlertIcon className="h-5 w-5 text-danger" aria-hidden />}
-        title={`Fix ${validation.errors.length} ${validation.errors.length === 1 ? 'problem' : 'problems'} before testing`}
-        body="A draft with errors can’t start a conversation. Each problem links to the setting."
-      >
-        <ul className="mt-4 w-full max-w-md divide-y divide-line rounded-lg border border-line text-left">
+  // The server's checks inform; the server itself refuses a session for a draft it cannot run (and says why).
+  const problems = validation && !validation.valid ? (
+      <div role="status" className="mb-4 rounded-xl border border-danger/30 bg-danger-soft/40 px-4 py-3">
+        <p className="flex items-center gap-2 text-sm font-medium text-ink">
+          <CircleAlertIcon className="h-4 w-4 text-danger" aria-hidden />
+          The server’s checks found {validation.errors.length} {validation.errors.length === 1 ? 'problem' : 'problems'}. It may refuse to start a test until they are fixed.
+        </p>
+        <ul className="mt-2 divide-y divide-line rounded-lg border border-line bg-surface text-left">
           {validation.errors.map((e, i) => (
             <li key={i} className="flex items-start justify-between gap-3 px-3 py-2.5">
               <div className="min-w-0">
@@ -47,9 +47,9 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
             </li>
           ))}
         </ul>
-      </Blocker>
-    );
-  } else if (!hasWebChannel) {
+      </div>
+    ) : null;
+  if (!hasWebChannel) {
     blocker = (
       <Blocker
         icon={<PhoneIcon className="h-5 w-5 text-muted" aria-hidden />}
@@ -84,6 +84,7 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
         </div>
       </div>
 
+      {activeTab === 'live' && problems}
       {activeTab === 'live' ? (
         blocker ?? (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">

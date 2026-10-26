@@ -1,6 +1,5 @@
-import type { Agent, Deployment, EnvironmentName, StageId, Version } from '../types/studio';
+import type { Agent, Deployment, EnvironmentName, StageId, ValidationReport, Version } from '../types/studio';
 import { diffConfigs, meaningfulChanges } from './diff';
-import { validateConfig } from './validate';
 
 export const environments: EnvironmentName[] = ['development', 'staging', 'production'];
 
@@ -42,7 +41,8 @@ export interface NextStep {
   tone: 'accent' | 'danger';
 }
 
-export function nextStep(agent: Agent): NextStep {
+/** report: the server's checks on the saved draft, or null while they are not known (then no "fix problems" step). */
+export function nextStep(agent: Agent, report: ValidationReport | null): NextStep {
   if (agent.loadError) {
     return {
       title: `Could not load ${agent.name}`,
@@ -52,13 +52,12 @@ export function nextStep(agent: Agent): NextStep {
       tone: 'danger'
     };
   }
-  const report = validateConfig(agent.draft.config);
   const latest = latestVersion(agent);
   const live = currentDeployments(agent);
-  if (!report.valid) {
+  if (report && !report.valid) {
     return {
       title: `Fix ${report.errors.length} ${report.errors.length === 1 ? 'problem' : 'problems'} in ${agent.name}`,
-      body: 'The draft is saved, but it can’t be tested or published until these are fixed. Each one links straight to the setting.',
+      body: 'The draft is saved, but the server will not publish it until these are fixed. Each one links straight to the setting.',
       cta: 'Review problems',
       stage: 'build',
       tone: 'danger'

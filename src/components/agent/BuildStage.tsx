@@ -78,7 +78,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.nonce]);
 
-  if (!editor.config || !editor.validation || !editor.agent) return null;
+  if (!editor.config || !editor.agent) return null;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
@@ -125,8 +125,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
         </div>
         <aside className="self-start xl:sticky xl:top-44">
           <ValidationPanel
-            validation={editor.validation}
-            validating={editor.validating}
+            view={editor.validationView}
             config={editor.config}
             onGoTo={focusPath}
           />

@@ -51,11 +51,13 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
   }, [open]);
 
   const latest = agent ? latestVersion(agent) : undefined;
-  const report = editor.validation;
+  // The server's report on the saved draft (the editor holds exactly that when this opens). It informs: the server
+  // decides at publish time, and only its refusal (422) stops a publish.
+  const report = editor.validationView.report;
   const keys = useSecretKeys();
   const missing = useMemo(() => report ? missingSecrets(report.secrets_required, keys) : [], [report, keys]);
   const changes = agent ? draftChangeCount(agent) : 0;
-  if (!agent || !report || !editor.config) return null;
+  if (!agent || !editor.config) return null;
 
   const handlePublish = async () => {
     if (publishing) return;
@@ -117,27 +119,21 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
       open={open}
       onClose={onClose}
       size="lg"
-      title={report.valid ? 'Publish a new version' : 'This draft can’t be published yet'}
-      description={
-      report.valid ?
-      `Freezes the saved draft (revision ${editor.baseRevision}). ${!latest ? 'This will be the first version.' : changes === null ? `Changes since ${latest.version} could not be counted.` : `${changes} ${changes === 1 ? 'change' : 'changes'} since ${latest.version}.`}` :
-      'Saving always works, but publishing needs a draft with no errors. Fix these and try again.'
-      }
+      title="Publish a new version"
+      description={`Freezes the saved draft (revision ${editor.baseRevision}). ${!latest ? 'This will be the first version.' : changes === null ? `Changes since ${latest.version} could not be counted.` : `${changes} ${changes === 1 ? 'change' : 'changes'} since ${latest.version}.`}`}
       footer={
-      report.valid ?
       <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button variant="primary" onClick={handlePublish} disabled={publishing}>
               {publishing ? <><LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />Publishing…</> : <>Publish {bumpVersion(latest?.version, bump)}</>}
             </Button>
-          </> :
-
-      <Button variant="secondary" onClick={onClose}>Close</Button>
-
+          </>
       }>
-      
-      {!report.valid ?
-      <ul className="divide-y divide-line rounded-lg border border-line">
+      {report && !report.valid &&
+      <div className="mb-6 rounded-lg border border-danger/30 bg-danger-soft/40 p-3">
+          <p className="text-sm font-medium text-ink">The server’s checks found {report.errors.length} {report.errors.length === 1 ? 'problem' : 'problems'}</p>
+          <p className="text-[13px] text-muted">The server will refuse to publish until they are fixed. You can still try.</p>
+      <ul className="mt-2 divide-y divide-line rounded-lg border border-line bg-surface">
           {report.errors.map((e, i) =>
         <li key={i} className="flex items-start gap-3 px-3 py-3">
               <CircleAlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
@@ -159,8 +155,14 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
           }
             </li>
         )}
-        </ul> :
-
+        </ul>
+        </div>
+      }
+      {editor.validationView.status !== 'checked' &&
+      <p className="mb-4 text-[13px] text-muted" aria-live="polite">
+          {editor.validationView.status === 'failed' ? `The server’s checks could not be run (${editor.validationView.error}). The server still checks when you publish.` : 'The server is checking the draft…'}
+        </p>
+      }
       <div className="space-y-6">
           {serverErrors &&
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-3">
@@ -203,7 +205,7 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
             </div>
           </fieldset>
 
-          {report.warnings.length > 0 &&
+          {report && report.warnings.length > 0 &&
         <section>
               <h3 className="text-sm font-medium text-ink">Worth a look before you publish</h3>
               <p className="text-[13px] text-muted">Warnings never block publishing.</p>
@@ -221,7 +223,7 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
           <section>
             <h3 className="text-sm font-medium text-ink">Secrets this version needs on the server</h3>
             <ul className="mt-2 flex flex-wrap gap-2">
-              {report.secrets_required.map((s) =>
+              {(report?.secrets_required ?? []).map((s) =>
             <li
               key={s}
               className={cn(
@@ -238,7 +240,6 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
             {missing.length > 0 && <p className="mt-2 text-[13px] text-muted">You can still publish. Calls will fail until an admin adds the missing secrets on the server.</p>}
           </section>
         </div>
-      }
     </Dialog>);
 
 }

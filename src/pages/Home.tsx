@@ -28,6 +28,7 @@ import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { AuditTrailDialog } from '../components/ui/AuditTrailDialog';
 import { FirstRunChecklist } from '../components/home/FirstRunChecklist';
 import { currentDeployments, environments, envLabel, envShort, nextStep, pendingDeployment } from '../utils/agentStatus';
+import { useDraftValidations } from '../hooks/useServerValidation';
 import { timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
 import type { StageId } from '../types/studio';
@@ -84,7 +85,8 @@ export function Home() {
     () => [...agents].sort((a, b) => new Date(b.draft.saved_at).getTime() - new Date(a.draft.saved_at).getTime())[0],
     [agents]
   );
-  const step = focus ? nextStep(focus) : null;
+  const focusChecks = useDraftValidations(focus ? [focus] : []);
+  const step = focus ? nextStep(focus, focusChecks[focus.id]?.report ?? null) : null;
   const stageIndex = step ? stages.findIndex((s) => s.id === step.stage) : 0;
 
   const totalPages = Math.max(1, Math.ceil(liveAgents.length / livePageSize));

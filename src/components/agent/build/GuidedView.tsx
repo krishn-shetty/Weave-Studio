@@ -28,9 +28,11 @@ interface GuidedViewProps {
 
 
 export function GuidedView({ editor, onMore }: GuidedViewProps) {
-  const { config, validation, update, canEdit } = editor;
+  const { config, update, canEdit } = editor;
+  // Field problems come from the server's report (none shown until it has answered).
+  const validation = { errors: editor.validation?.errors ?? [], warnings: editor.validation?.warnings ?? [] };
   const { answer: providers, error: providersError } = useProviders();
-  if (!config || !validation) return null;
+  if (!config) return null;
   const disabled = !canEdit;
   const err = (p: Path) => issuesAt(validation.errors, p)[0]?.message;
   const warn = (p: Path) => issuesAt(validation.warnings, p)[0]?.message;

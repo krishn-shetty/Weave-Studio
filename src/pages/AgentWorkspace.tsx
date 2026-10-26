@@ -70,7 +70,7 @@ export function AgentWorkspace() {
   // A deep link opened before the agent list has arrived: not "not found" yet, just not read yet.
   if (!editor.agent && loading) return <WorkspaceSkeleton />;
 
-  if (!editor.agent || !editor.config || !editor.validation) {
+  if (!editor.agent || !editor.config) {
     return (
       <div className="mx-auto max-w-lg px-6 py-24 text-center">
         <h1 className="text-lg font-semibold text-ink">Agent not found</h1>

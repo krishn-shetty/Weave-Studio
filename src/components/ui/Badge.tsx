@@ -1,7 +1,7 @@
 import React from 'react';
 import { cn } from '../../utils/styles';
 
-export type BadgeVariant = 'success' | 'danger' | 'neutral' | 'outline';
+export type BadgeVariant = 'success' | 'danger' | 'neutral' | 'outline' | 'warning';
 
 export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -15,6 +15,7 @@ const variantStyles: Record<BadgeVariant, string> = {
   danger: 'bg-danger-soft text-danger border border-danger/20',
   neutral: 'bg-subtle text-ink-soft border border-line',
   outline: 'bg-transparent text-ink border border-line-strong font-mono',
+  warning: 'bg-warning-soft text-warning border border-warning/20',
 };
 
 export function Badge({

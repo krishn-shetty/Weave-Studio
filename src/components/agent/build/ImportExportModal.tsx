@@ -6,7 +6,8 @@ import { useStudio } from '../../../contexts/StudioContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
-import { validateConfig } from '../../../utils/validate';
+import { api } from '../../../api/client';
+import type { ValidationReport } from '../../../types/studio';
 import { checkJson } from '../../../utils/jsonCheck';
 import { inputClass } from '../../../utils/styles';
 
@@ -24,7 +25,12 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
   const { can } = useAuth();
   const [tab, setTab] = useState<'export' | 'import'>('export');
   const [importJson, setImportJson] = useState('');
-  const [validationResult, setValidationResult] = useState<ReturnType<typeof validateConfig> | null>(null);
+  // The server's report on the pasted config (POST /validate). It informs; an invalid config can still be imported
+  // and saved, as with any edit. Publishing is where the server refuses.
+  const [validationResult, setValidationResult] = useState<ValidationReport | null>(null);
+  const [checking, setChecking] = useState(false);
+  const checkSeq = useRef(0);
+  const [parsed, setParsed] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +55,9 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
 
   const handleTextChange = (text: string) => {
     setImportJson(text);
+    setParsed(false);
+    checkSeq.current++;
+    setChecking(false);
     if (!text.trim()) {
       setJsonError(null);
       setValidationResult(null);
@@ -62,15 +71,22 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
       return;
     }
 
-    setJsonError(null);
-    try {
-      const configObj = check.value as AgentConfig;
-      const report = validateConfig(configObj);
-      setValidationResult(report);
-    } catch (err: unknown) {
-      setJsonError(err instanceof Error ? err.message : 'Invalid configuration structure');
+    if (typeof check.value !== 'object' || check.value === null || Array.isArray(check.value)) {
+      setJsonError('The configuration must be a JSON object ({ … }).');
+      setParsed(false);
       setValidationResult(null);
+      return;
     }
+    setJsonError(null);
+    setParsed(true);
+    setValidationResult(null);
+    const seq = ++checkSeq.current;
+    setChecking(true);
+    api
+      .validate(check.value as AgentConfig)
+      .then((report) => seq === checkSeq.current && setValidationResult(report))
+      .catch((err: unknown) => seq === checkSeq.current && setJsonError(`The server’s checks could not be run: ${err instanceof Error ? err.message : 'unknown error'}`))
+      .finally(() => seq === checkSeq.current && setChecking(false));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -85,7 +101,7 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
   };
 
   const handleConfirmImport = () => {
-    if (!validationResult || !validationResult.valid) return;
+    if (!parsed) return;
     const check = checkJson(importJson);
     if (!check.ok) return;
 
@@ -120,7 +136,7 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
               <Button
                 variant="primary"
                 onClick={handleConfirmImport}
-                disabled={!validationResult?.valid || !can('edit')}
+                disabled={!parsed || !can('edit')}
               >
                 <UploadIcon className="h-3.5 w-3.5 mr-1" />
                 Replace Draft
@@ -213,6 +229,7 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
               </div>
             )}
 
+            {checking && <p className="text-xs text-muted" aria-live="polite">Asking the server to check it…</p>}
             {validationResult && (
               <div
                 className={`rounded-lg border p-3.5 text-xs ${
@@ -230,8 +247,8 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
                     )}
                     <span className="font-semibold text-ink">
                       {validationResult.valid
-                        ? 'Validation Passed (Ready to Import)'
-                        : `Validation Failed (${validationResult.errors.length} errors)`}
+                        ? 'The server found no problems'
+                        : `The server found ${validationResult.errors.length} ${validationResult.errors.length === 1 ? 'problem' : 'problems'}`}
                     </span>
                   </div>
                   {validationResult.warnings.length > 0 && (
@@ -250,11 +267,9 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
                   </ul>
                 )}
 
-                {validationResult.valid && (
-                  <p className="mt-1 text-ink-soft">
-                    All required sections and cross-references (x-ref) are verified. Clicking "Replace Draft" will safely apply this configuration.
-                  </p>
-                )}
+                <p className="mt-1 text-ink-soft">
+                  Replace Draft puts this into the editor. Nothing is saved until you press Save{validationResult.valid ? '.' : ', and the server will not publish it until the problems are fixed.'}
+                </p>
               </div>
             )}
           </div>

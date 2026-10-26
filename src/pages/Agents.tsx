@@ -38,7 +38,8 @@ import {
   AccordionItem,
 } from '../components/ui/accordion';
 import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
-import { validateConfig } from '../utils/validate';
+import { useDraftValidations } from '../hooks/useServerValidation';
+import type { ValidationView } from '../utils/serverValidation';
 import { currentDeployments, draftChangeCount, environments, envShort, envLabel, latestVersion } from '../utils/agentStatus';
 import { missingSecrets } from '../utils/providerOptions';
 import { useSecretKeys } from '../hooks/useProviders';
@@ -103,19 +104,20 @@ export function Agents() {
   };
 
   const secretKeys = useSecretKeys();
+  // The server's checks on each saved draft (POST /validate); null while it has not answered.
+  const validations = useDraftValidations(agents);
   const rows = useMemo(
     () =>
       agents.map((a) => {
-        const report = a.loadError
-          ? { valid: false, errors: [{ path: null, message: `Could not load the draft: ${a.loadError}` }], warnings: [], secrets_required: [], unsupported: [] }
-          : validateConfig(a.draft.config);
+        const checks = validations[a.id];
+        const report = checks?.report ?? null;
         const latest = latestVersion(a);
         const current = currentDeployments(a);
-        const missing = latest?.config ? missingSecrets(validateConfig(latest.config).secrets_required, secretKeys) : [];
+        const missing = report ? missingSecrets(report.secrets_required, secretKeys) : [];
         const isPinned = pinnedAgentIds.includes(a.id);
-        return { agent: a, report, latest, current, missing, changes: draftChangeCount(a), isPinned };
+        return { agent: a, report, checks, latest, current, missing, changes: draftChangeCount(a), isPinned };
       }),
-    [agents, pinnedAgentIds, secretKeys]
+    [agents, pinnedAgentIds, secretKeys, validations]
   );
 
   const filtered = useMemo(() => {
@@ -123,7 +125,7 @@ export function Agents() {
     const list = rows
       .filter((r) => !needle || r.agent.name.toLowerCase().includes(needle) || r.agent.id.includes(needle))
       .filter((r) => {
-        if (status === 'attention') return !r.report.valid || r.missing.length > 0;
+        if (status === 'attention') return r.report?.valid === false || r.checks?.status === 'failed' || r.missing.length > 0;
         if (status === 'draft') return !r.latest;
         if (status === 'published') return !!r.latest;
         if (status === 'live') return Object.keys(r.current).length > 0;
@@ -305,7 +307,7 @@ export function Agents() {
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ agent, report, latest, current, missing, changes, isPinned }) => (
+              {visible.map(({ agent, checks, latest, current, missing, changes, isPinned }) => (
                 <tr
                   key={agent.id}
                   onClick={() => navigate(`/agents/${agent.id}`)}
@@ -343,13 +345,7 @@ export function Agents() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1.5">
-                      {report.valid ? (
-                        <StatusChip tone="success" dot>Valid</StatusChip>
-                      ) : (
-                        <StatusChip tone="danger" dot>
-                          {report.errors.length} {report.errors.length === 1 ? 'problem' : 'problems'}
-                        </StatusChip>
-                      )}
+                      <ChecksBadge view={checks} />
                       {!!changes && <StatusChip>{changes} unpublished</StatusChip>}
                       {missing.length > 0 && <StatusChip tone="warning" title={missing.join(', ')}>Missing secret</StatusChip>}
                     </div>
@@ -427,7 +423,7 @@ export function Agents() {
                   'select-none bg-surface rounded-[12px] relative'
                 )}
               >
-                {!item.report.valid && (
+                {item.report?.valid === false && (
                   <div
                     className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
                     aria-hidden="true"
@@ -462,15 +458,7 @@ export function Agents() {
                     </Badge>
                   )}
                   <div className="w-[96px] min-w-[96px] flex justify-center">
-                    <Badge
-                      variant={item.report.valid ? 'success' : 'danger'}
-                      dot
-                      className="w-full justify-center h-6"
-                    >
-                      {item.report.valid
-                        ? 'Valid'
-                        : `${item.report.errors.length} ${item.report.errors.length === 1 ? 'problem' : 'problems'}`}
-                    </Badge>
+                    <ChecksBadge view={item.checks} className="w-full justify-center h-6" />
                   </div>
                   <div className="w-[100px] min-w-[100px] flex justify-center">
                     <Badge variant="outline" mono className="w-full justify-center h-6">
@@ -493,7 +481,7 @@ export function Agents() {
               pageSizeOptions: [5, 10, 20, 50],
             }}
           >
-            {visible.map(({ agent, report, latest, current, missing, changes, isPinned }, idx) => {
+            {visible.map(({ agent, report, checks, latest, current, missing, changes, isPinned }, idx) => {
               const isFirst = idx === 0;
               const isLast = idx === visible.length - 1;
 
@@ -504,12 +492,12 @@ export function Agents() {
                   index={idx}
                   isFirst={isFirst}
                   isLast={isLast}
-                  hasProblem={!report.valid}
+                  hasProblem={report?.valid === false}
                 >
                   <AccordionHeader
                     id={agent.id}
                     icon={<BotIcon className="h-5 w-5 text-accent" />}
-                    hasProblem={!report.valid}
+                    hasProblem={report?.valid === false}
                     title={
                       <TruncatedText
                         text={agent.name}
@@ -538,15 +526,7 @@ export function Agents() {
                           </Badge>
                         )}
                         <div className="w-[96px] min-w-[96px] flex justify-center">
-                          <Badge
-                            variant={report.valid ? 'success' : 'danger'}
-                            dot
-                            className="w-full justify-center h-6"
-                          >
-                            {report.valid
-                              ? 'Valid'
-                              : `${report.errors.length} ${report.errors.length === 1 ? 'problem' : 'problems'}`}
-                          </Badge>
+                          <ChecksBadge view={checks} className="w-full justify-center h-6" />
                         </div>
                         <div className="w-[100px] min-w-[100px] flex justify-center">
                           <Badge variant="outline" mono className="w-full justify-center h-6">
@@ -619,10 +599,14 @@ export function Agents() {
                             <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
                               Configuration Health
                             </h4>
-                            {report.valid ? (
+                            {!report ? (
+                              <p className="mt-1.5 text-xs text-muted">
+                                {checks?.status === 'failed' ? `The server’s checks could not be run: ${checks.error}` : 'The server is checking the saved draft…'}
+                              </p>
+                            ) : report.valid ? (
                               <p className="mt-1.5 flex items-center gap-1.5 text-xs text-success font-medium">
                                 <CheckCircle2Icon className="h-3.5 w-3.5" />
-                                All settings and required role bindings are valid.
+                                The server’s checks pass.
                               </p>
                             ) : (
                               <div className="mt-2 space-y-1.5">
@@ -811,4 +795,19 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
       )}
     </div>
   );
+}
+
+/** What the server's checks say about an agent's saved draft, as a badge. */
+function ChecksBadge({ view, className }: { view: ValidationView | undefined; className?: string }) {
+  if (view?.status === 'checked' && view.report) {
+    return view.report.valid ?
+    <Badge variant="success" dot className={className}>Checks pass</Badge> :
+
+    <Badge variant="danger" dot className={className}>
+        {view.report.errors.length} {view.report.errors.length === 1 ? 'problem' : 'problems'}
+      </Badge>;
+
+  }
+  if (view?.status === 'failed') return <Badge variant="warning" className={className} title={view.error ?? undefined}>Not checked</Badge>;
+  return <Badge variant="neutral" className={className}>Checking…</Badge>;
 }

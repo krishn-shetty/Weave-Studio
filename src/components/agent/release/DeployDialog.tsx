@@ -10,7 +10,7 @@ import { Button } from '../../ui/Button';
 import { currentDeployments, environments, envLabel } from '../../../utils/agentStatus';
 import { missingSecrets, secretState } from '../../../utils/providerOptions';
 import { useSecretKeys } from '../../../hooks/useProviders';
-import { validateConfig } from '../../../utils/validate';
+import { useServerValidation, versionKey } from '../../../hooks/useServerValidation';
 import { useVersionConfig } from '../../../hooks/useVersionConfig';
 import { cn, easeOut, inputClass } from '../../../utils/styles';
 
@@ -64,7 +64,8 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   const v = agent.versions.find((x) => x.version === version);
   const versionConfig = useVersionConfig(agent, v?.version);
   const vConfig = versionConfig.config;
-  const report = vConfig ? validateConfig(vConfig) : null;
+  // The server's checks on this version's config (POST /validate); the deploy's own preflight follows when it runs.
+  const report = useServerValidation(v ? versionKey(agent.id, v.version) : '', vConfig, 0).report;
   const missing = report ? missingSecrets(report.secrets_required, keys) : [];
   const unchecked = report ? report.secrets_required.filter((s) => secretState(s, keys) === 'unknown') : [];
   const current = currentDeployments(agent)[env];
@@ -73,8 +74,10 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   const alreadyLive = current?.version === version;
   const confirmOk = !isProd || confirmText.trim() === agent.id;
 
+  const notProtected = report?.unsupported.filter((u) => u.severity === 'security') ?? [];
   const checks: CheckRow[] = report && vConfig ?
   [
+  ...(notProtected.length ? [{ ok: false, title: `Not protected: ${notProtected.map((u) => u.feature).join(', ')}`, detail: 'Set up in this version but the runtime does not enforce it yet, so callers are not protected by it. Think twice before production.' }] : []),
   missing.length ?
   { ok: false, title: `${missing.length} ${missing.length === 1 ? 'secret is' : 'secrets are'} missing on the server`, detail: `${missing.join(', ')} — calls that need them will fail. This is advice, not a blocker.` } :
   unchecked.length ?

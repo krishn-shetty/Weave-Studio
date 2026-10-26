@@ -16,7 +16,6 @@ import type {
 import { starters } from '../data/starters';
 import { useAuth } from './AuthContext';
 import { applyStarter } from '../utils/configFactory';
-import { validateConfig } from '../utils/validate';
 import { randomHex } from '../utils/format';
 import { currentDeployments } from '../utils/agentStatus';
 import { api, ApiError } from '../api/client';
@@ -462,9 +461,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) throw new Error(`Unknown agent ${agentId}`);
 
-      const report = validateConfig(agent.draft.config);
-      if (!report.valid) return { ok: false, errors: report.errors };
-
+      // No local gate: the server decides, and its 422 (with the problems) is what stops a publish.
       try {
         const res = await api.publish(agentId, bump);
         await refreshAgent(agentId);
