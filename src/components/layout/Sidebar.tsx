@@ -63,10 +63,6 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
         )}
       </nav>
       <div className="border-t border-line p-3">
-        <div className="mb-3 hidden items-center gap-2 px-1 text-xs text-muted lg:flex">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
-          Agent Builder API reachable via gateway
-        </div>
         {user &&
         <div className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-subtle text-xs font-semibold text-ink-soft" aria-hidden>
@@ -74,7 +70,7 @@ export function Sidebar({ onOpenPalette }: { onOpenPalette?: () => void }) {
             </span>
             <div className="hidden min-w-0 flex-1 lg:block">
               <p className="truncate text-sm font-medium text-ink">{user.name}</p>
-              <p className="truncate text-xs text-muted">{roleLabel[user.role]} · from company SSO</p>
+              <p className="truncate text-xs text-muted">{roleLabel[user.role]} · temporary sign-in</p>
             </div>
             <button
             type="button"

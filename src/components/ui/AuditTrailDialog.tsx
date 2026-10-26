@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { HistoryIcon, SearchIcon, ShieldCheckIcon, UserCheckIcon } from 'lucide-react';
+import { HistoryIcon, SearchIcon, UserCheckIcon } from 'lucide-react';
 import { ActivityAction, ActivityItem } from '../../types/studio';
 import { useStudio } from '../../contexts/StudioContext';
 import { Dialog } from './Dialog';
@@ -47,12 +47,11 @@ export function AuditTrailDialog({ open, onClose }: { open: boolean; onClose: ()
       onClose={onClose}
       size="xl"
       title="Audit Trail & Release Accountability (FR-24)"
-      description="Immutable record of who changed, published, deployed, or rolled back each agent."
+      description="Who saved, published and deployed each agent, as the server recorded it."
       footer={
         <div className="flex w-full items-center justify-between">
           <span className="text-xs text-muted flex items-center gap-1.5">
-            <ShieldCheckIcon className="h-3.5 w-3.5 text-success" />
-            Audit records verified via gateway headers (X-User)
+            Names are the X-User label the gateway forwards. They are not verified.
           </span>
           <Button variant="primary" onClick={onClose}>
             Done

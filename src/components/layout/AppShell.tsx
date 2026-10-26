@@ -7,7 +7,6 @@ import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { CommandPalette } from '../ui/CommandPalette';
 import { CreateAgentDialog } from '../agents/CreateAgentDialog';
-import { SessionExpiredModal } from '../ui/SessionExpiredModal';
 import { HelpShortcutsModal } from '../ui/HelpShortcutsModal';
 import { Breadcrumbs } from './Breadcrumbs';
 
@@ -92,7 +91,6 @@ export function AppShell() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
       />
-      <SessionExpiredModal />
       <HelpShortcutsModal
         open={helpOpen}
         onClose={() => setHelpOpen(false)}
