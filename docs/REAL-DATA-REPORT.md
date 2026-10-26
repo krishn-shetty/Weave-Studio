@@ -3,7 +3,7 @@
 **Weave Studio v3: "Make It Real" Verification & Audit Report**  
 **Date:** 2026-10-22  
 **Owner:** Shetty  
-**Status:** Complete & Verified on Live Backend (`http://16.79.174.151:8100`)
+**Status:** Complete & Verified on Live Backend (`AGENT_BUILDER_URL`)
 
 ---
 
@@ -40,7 +40,7 @@ The production build was verified using `npm run build`:
 
 ## 2. API Coverage Table (36 Endpoints + Extras)
 
-All endpoints have been tested against the live server at `http://16.79.174.151:8100` via the secure proxy layer.
+All endpoints have been tested against the live server at `AGENT_BUILDER_URL` via the secure proxy layer.
 
 | # | Endpoint | Method | Status | Trimmed Live Response Example (Secrets Redacted) | Screen / Component | Result |
 |---|---|---|---|---|---|---|
@@ -146,7 +146,7 @@ All endpoints have been tested against the live server at `http://16.79.174.151:
 - **Result:** Zero secrets found in client bundle.
 
 ### 4.2 Proxy & Header Injection
-- Vite development proxy (`vite.config.ts`) strips `/api` prefix, targets `http://16.79.174.151:8100`, and injects:
+- Vite development proxy (`vite.config.ts`) strips `/api` prefix, targets `AGENT_BUILDER_URL`, and injects:
   - `Authorization: Bearer <AGENT_BUILDER_API_KEY>` (read exclusively from environment `.env`)
   - `X-User: <current_user_email_or_identifier>`
 - Unauthenticated requests in production gateway reject with 401.
@@ -183,4 +183,4 @@ All endpoints have been tested against the live server at `http://16.79.174.151:
 - **TypeScript:** `npx tsc --noEmit` exits with code 0 (0 errors).
 - **Linter:** `npm run lint` exits with code 0 (0 errors).
 - **Production Build:** `npm run build` succeeds cleanly.
-- **Backend Communication:** Verified live requests to all 36 endpoints on `http://16.79.174.151:8100`.
+- **Backend Communication:** Verified live requests to all 36 endpoints on `AGENT_BUILDER_URL`.

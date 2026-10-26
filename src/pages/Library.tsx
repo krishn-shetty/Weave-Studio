@@ -457,7 +457,7 @@ export function Library() {
                   <StatusChip tone="success">Connected to Server</StatusChip>
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
-                  Real providers reported by <code className="font-mono">GET /providers</code> at <code className="font-mono">http://16.79.174.151:8100</code>.
+                  Real providers reported by <code className="font-mono">GET /providers</code> on the Agent Builder API.
                 </p>
               </div>
             </div>

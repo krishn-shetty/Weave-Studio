@@ -1,6 +1,6 @@
 # API Discovery Findings (Step 0)
 
-Captured on 22 Oct 2026 against `http://16.79.174.151:8100`.
+Captured on 22 Oct 2026 against `AGENT_BUILDER_URL`.
 
 ---
 
@@ -8,8 +8,8 @@ Captured on 22 Oct 2026 against `http://16.79.174.151:8100`.
 
 **Command:**
 ```bash
-curl.exe -s -i http://16.79.174.151:8100/health
-curl.exe -s -i http://16.79.174.151:8100/environments
+curl.exe -s -i <AGENT_BUILDER_URL>/health
+curl.exe -s -i <AGENT_BUILDER_URL>/environments
 ```
 
 **Captured Response (`/health`):**
@@ -37,7 +37,7 @@ The server **requires a Bearer key** for all non-public endpoints. `GET /health`
 
 **Command:**
 ```bash
-curl.exe -s -H "Authorization: Bearer <KEY>" http://16.79.174.151:8100/providers
+curl.exe -s -H "Authorization: Bearer <KEY>" <AGENT_BUILDER_URL>/providers
 ```
 
 **Captured Response:**
@@ -161,7 +161,7 @@ curl.exe -s -H "Authorization: Bearer <KEY>" http://16.79.174.151:8100/providers
 
 **Command:**
 ```bash
-curl.exe -s -i -H "Authorization: Bearer <KEY>" -H "Content-Type: application/json" -X POST http://16.79.174.151:8100/bots/voice-test/sessions -d "{}"
+curl.exe -s -i -H "Authorization: Bearer <KEY>" -H "Content-Type: application/json" -X POST <AGENT_BUILDER_URL>/bots/voice-test/sessions -d "{}"
 ```
 
 **Captured Response:**
@@ -286,6 +286,6 @@ Paths in `openapi.json`:
 7. **`src/components/agent/ReleaseStage.tsx:14` & `src/components/agent/MonitorStage.tsx:6`**:
    - Imports and displays fake metric numbers from `src/data/healthMetrics.ts`.
 8. **`vite.config.ts`**:
-   - Missing proxy configuration for `/api` that points to `http://16.79.174.151:8100`, rewrites `/api`, and injects the `Authorization: Bearer <KEY>` header.
+   - Missing proxy configuration for `/api` that points to `AGENT_BUILDER_URL`, rewrites `/api`, and injects the `Authorization: Bearer <KEY>` header.
 9. **`src/api` directory**:
    - Was completely empty; no HTTP client existed to call the backend.
