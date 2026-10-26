@@ -194,7 +194,8 @@ export type CallOutcome = 'resolved' | 'handed_over' | 'cut_off' | 'abandoned';
 export interface TranscriptLine {
   speaker: 'agent' | 'caller';
   text: string;
-  at_s: number;
+  /** Seconds into the call; undefined when the record has no time for this turn. */
+  at_s?: number;
 }
 
 export interface ToolCallRecord {

@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { CallOutcome, CallRecord, ChannelType } from '../../types/studio';
 import { StatusChip, type ChipTone } from '../ui/StatusChip';
 import { formatDuration, formatShortDate } from '../../utils/format';
+import { callPath } from '../../utils/routes';
 
 interface CallsTableProps {
   calls: CallRecord[];
@@ -36,9 +37,9 @@ export function CallsTable({ calls, agentNames }: CallsTableProps) {
         </thead>
         <tbody>
           {calls.map((c) =>
-          <tr key={c.id} onClick={() => navigate(`/calls/${c.id}`)} className="cursor-pointer border-b border-line transition-colors duration-150 last:border-0 hover:bg-canvas">
+          <tr key={c.id} onClick={() => navigate(callPath(c.agentId, c.id))} className="cursor-pointer border-b border-line transition-colors duration-150 last:border-0 hover:bg-canvas">
               <td className="whitespace-nowrap px-4 py-3">
-                <Link to={`/calls/${c.id}`} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
+                <Link to={callPath(c.agentId, c.id)} onClick={(e) => e.stopPropagation()} className="font-medium text-ink hover:underline">
                   {formatShortDate(c.started_at)}
                 </Link>
               </td>

@@ -31,6 +31,7 @@ import { formatDateTime, formatDuration, formatPercent, formatShortDate } from '
 import { api } from '../../api/client';
 import { cn } from '../../utils/styles';
 import type { CallRecord } from '../../types/studio';
+import { callPath } from '../../utils/routes';
 
 type Period = '7' | '14' | '30';
 
@@ -299,7 +300,7 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              onClick={() => navigate(`/calls/${call.id}`)}
+                              onClick={() => navigate(callPath(call.agentId, call.id))}
                               className="h-8 px-2 text-xs"
                             >
                               <ExternalLinkIcon className="h-3.5 w-3.5 mr-1" />
@@ -322,7 +323,7 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
                               <Button
                                 size="sm"
                                 variant="primary"
-                                onClick={() => navigate(`/calls/${call.id}`)}
+                                onClick={() => navigate(callPath(call.agentId, call.id))}
                               >
                                 <span>Open Full Transcript</span>
                                 <ArrowRightIcon className="h-3.5 w-3.5 ml-1" />

@@ -32,6 +32,7 @@ import { formatDateTime, formatDuration, formatShortDate } from '../utils/format
 import { cn, inputClass } from '../utils/styles';
 import { api } from '../api/client';
 import type { CallRecord } from '../types/studio';
+import { callPath } from '../utils/routes';
 
 export function Calls() {
   const { agents } = useStudio();
@@ -414,7 +415,7 @@ export function Calls() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => navigate(`/calls/${call.id}`)}
+                          onClick={() => navigate(callPath(call.agentId, call.id))}
                           className="h-8 px-2 text-xs"
                         >
                           <ExternalLinkIcon className="h-3.5 w-3.5 mr-1" />
@@ -438,7 +439,7 @@ export function Calls() {
                           <Button
                             size="sm"
                             variant="primary"
-                            onClick={() => navigate(`/calls/${call.id}`)}
+                            onClick={() => navigate(callPath(call.agentId, call.id))}
                           >
                             <span>Open Transcript</span>
                             <ArrowRightIcon className="h-3.5 w-3.5 ml-1" />

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeftIcon,
   DownloadIcon,
@@ -34,11 +34,19 @@ function getChannelValue(channel: CallTranscriptResponse["call"]["channel"]): st
     : channel || "";
 }
 
+// Seconds into the call: elapsed_s when the record has it, else the turn's time (`at`, ISO) minus the call's start.
+function secondsIntoCall(turn: CallTranscriptResponse["turns"][number], startedAt: string): number | undefined {
+  if (typeof turn.elapsed_s === "number") return Math.round(turn.elapsed_s);
+  const at = typeof turn.at === "string" ? Date.parse(turn.at) : NaN;
+  const start = Date.parse(startedAt);
+  return Number.isFinite(at) && Number.isFinite(start) ? Math.max(0, Math.round((at - start) / 1000)) : undefined;
+}
+
 function mapTranscript(response: CallTranscriptResponse): TranscriptLine[] {
-  return response.turns.map((turn, index) => ({
+  return response.turns.map((turn) => ({
     speaker: turn.role === "agent" || turn.role === "assistant" ? "agent" : "caller",
     text: turn.text,
-    at_s: Math.round(turn.elapsed_s ?? turn.at ?? index * 4),
+    at_s: secondsIntoCall(turn, response.call.started_at),
   }));
 }
 
@@ -76,44 +84,22 @@ function mapCall(response: CallTranscriptResponse, agentId: string, lines: Trans
 }
 
 type TimelineItem =
-  | { type: "line"; at: number; line: TranscriptLine }
-  | { type: "tool"; at: number; tool: ToolCallRecord };
+  | { type: "line"; at: number | undefined; line: TranscriptLine }
+  | { type: "tool"; at: number | undefined; tool: ToolCallRecord };
 
 async function getCallRecord(
   agentId: string,
   callId: string,
   signal: AbortSignal,
 ): Promise<CallRecord | null> {
-  const transcript = await api.getTranscript(agentId, callId, { signal }).catch((error: unknown) => {
-    if (signal.aborted) throw error;
-    return null;
-  });
+  const transcript = await api.getTranscript(agentId, callId, { signal });
   if (transcript?.call) return mapCall(transcript, agentId, mapTranscript(transcript));
-
-  const callData = await api.getCall(agentId, callId, {}, { signal }).catch((error: unknown) => {
-    if (signal.aborted) throw error;
-    return null;
-  });
-  if (!callData) return null;
-  return {
-    id: callId,
-    agentId,
-    channel: "web_voice",
-    environment: "test",
-    version: "draft",
-    started_at: new Date().toISOString(),
-    duration_s: 0,
-    outcome: "resolved",
-    caller: "Visitor",
-    summary: "Call details",
-    transcript: [],
-    tool_calls: [],
-    errors: [],
-  };
+  return null;
 }
 
 export function CallDetail() {
   const { callId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { agents } = useStudio();
 
@@ -126,22 +112,23 @@ export function CallDetail() {
     call ? `${call.caller} (${call.id.slice(0, 10)})` : null,
   );
 
-  // Find which agent this call belongs to
+  // Which agent this call belongs to: the link says so (?agent=). Older links: a test room is named
+  // test-<agent>-<hex>. Never a guess beyond that.
   const agentId = useMemo(() => {
-    if (!callId) return "voice-test";
-    // Room format: test-<botId>-<hex>_<timestamp>
-    const match = /^(?:test|session)-([a-z0-9_-]+)-/.exec(callId);
-    if (match?.[1]) {
-      const found = agents.find((a) => a.id === match[1]);
-      if (found) return found.id;
-      return match[1];
-    }
-    return agents[0]?.id || "voice-test";
-  }, [callId, agents]);
+    const fromLink = searchParams.get("agent");
+    if (fromLink) return fromLink;
+    const match = callId ? /^(?:test|session)-([a-z0-9_-]+)-[0-9a-f]+_/.exec(callId) : null;
+    return match?.[1] ?? null;
+  }, [callId, searchParams]);
 
   useEffect(() => {
     if (!callId) {
       setError("Call record not found on the server.");
+      setLoading(false);
+      return;
+    }
+    if (!agentId) {
+      setError("This link does not say which agent the call belongs to. Open the call from the Calls list.");
       setLoading(false);
       return;
     }
@@ -191,10 +178,11 @@ export function CallDetail() {
         .map((tool) => ({ type: "tool" as const, at: tool.at_s, tool })),
     ];
 
-    return items.sort((a, b) => a.at - b.at || (a.type === "line" ? -1 : 1));
+    // Lines stay in the order the server recorded them; a time only reorders items that both have one.
+    return items.sort((a, b) => (a.at === undefined || b.at === undefined ? 0 : a.at - b.at || (a.type === "line" ? -1 : 1)));
   }, [call, transcriptLines]);
 
-  const agent = agents.find((a) => a.id === (call?.agentId || agentId));
+  const agent = agents.find((a) => a.id === (call?.agentId ?? agentId));
   let envText = "";
   if (call) {
     envText = call.environment === "test"
@@ -255,7 +243,7 @@ export function CallDetail() {
     );
   }
 
-  const downloadUrl = api.downloadCallUrl(agentId, call.id);
+  const downloadUrl = api.downloadCallUrl(call.agentId, call.id);
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
@@ -366,7 +354,7 @@ export function CallDetail() {
                   const isAgent = item.line.speaker === "agent";
                   return (
                     <li
-                      key={`${item.line.at_s}-${item.line.speaker}-${item.line.text}`}
+                      key={`${item.line.at_s ?? ''}-${item.line.speaker}-${item.line.text}`}
                       className={cn(
                         "flex gap-3",
                         isAgent ? "justify-start" : "justify-end",
@@ -392,7 +380,7 @@ export function CallDetail() {
                           <span className="font-medium">
                             {isAgent ? agent?.name || "Agent" : call.caller}
                           </span>
-                          <span>{formatOffset(item.at)}</span>
+                          {item.at !== undefined && <span>{formatOffset(item.at)}</span>}
                         </div>
                         <p className="mt-1 leading-relaxed">{item.line.text}</p>
                       </div>
@@ -435,7 +423,7 @@ export function CallDetail() {
               </div>
               <div>
                 <dt className="text-muted">Agent</dt>
-                <dd className="mt-0.5 text-ink">{agent?.name || agentId}</dd>
+                <dd className="mt-0.5 text-ink">{agent?.name ?? call.agentId}</dd>
               </div>
               <div>
                 <dt className="text-muted">Environment</dt>
