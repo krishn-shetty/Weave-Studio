@@ -62,6 +62,35 @@ export interface Published extends VersionSummary {
   secrets_required: string[];
 }
 
+/** A phone number the phone system knows (GET /numbers). managed: created through this API for a bot. */
+export interface PhoneNumber {
+  number: string;
+  managed: boolean;
+  trunk: { id: string; name: string } | null;
+  bot: string | null;
+  environment: string | null;
+  rule: { id: string; name: string; agents: string[][] } | null;
+  options: { record_audio: boolean; krisp: boolean; allowed_addresses: string[]; max_call_duration_s: number | null };
+  problems: Array<string | { problem: string; fix?: string }>;
+}
+
+export interface NumberSettings {
+  number_pattern: string;
+  environments: string[];
+  defaults: { record_audio: boolean; krisp: boolean; allowed_addresses: string[] };
+  recording?: { format: string; path: string };
+  livekit_configured: boolean;
+}
+
+export interface NumberCheck {
+  number: string;
+  /** free, invalid, taken_external, or taken by a bot */
+  status: string;
+  owner: { trunk?: string; bot?: string | null; environment?: string | null; agents?: string[][] } | null;
+  warnings: string[];
+  reason?: string;
+}
+
 /** POST /preview/prompt: what the model would be given, built by the server from a config. */
 export interface PromptPreview {
   agent: { id: string; name: string; kind?: string; is_entry?: boolean };

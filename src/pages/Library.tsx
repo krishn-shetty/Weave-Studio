@@ -5,10 +5,8 @@ import {
   CopyIcon,
   KeyRoundIcon,
   PauseIcon,
-  PhoneCallIcon,
   PlayIcon,
   PlugIcon,
-  PlusIcon,
   RefreshCwIcon,
   SearchIcon,
   ServerIcon,
@@ -18,15 +16,7 @@ import { StatusChip } from '../components/ui/StatusChip';
 import { Button } from '../components/ui/Button';
 import { Dialog } from '../components/ui/Dialog';
 import { DemoDataBadge } from '../components/ui/DemoDataBadge';
-import { Tooltip } from '../components/ui/Tooltip';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionHeader,
-  AccordionItem,
-} from '../components/ui/accordion';
-import { api } from '../api/client';
-import { useStudio } from '../contexts/StudioContext';
+import { NumbersPanel } from '../components/library/NumbersPanel';
 import { VOICE_CATALOG, type CatalogVoice } from '../data/voiceCatalog';
 import { INTEGRATIONS_CATALOG, type IntegrationItem } from '../data/integrationsCatalog';
 import { useProviders } from '../hooks/useProviders';
@@ -41,18 +31,7 @@ interface ConfiguredIntegration {
   updatedAt: string;
 }
 
-interface DemoPhoneNumber {
-  id: string;
-  number: string;
-  carrier: string;
-  status: 'active' | 'pending' | 'reserved';
-  assignedBot: string;
-  environment: 'development' | 'staging' | 'production';
-  dnis: string;
-}
-
 export function Library() {
-  const { agents } = useStudio();
   const [tab, setTab] = useState<Tab>('voices');
 
   // GET /providers, shared with the pickers in Build
@@ -82,41 +61,6 @@ export function Library() {
   const [activeModalIntegration, setActiveModalIntegration] = useState<IntegrationItem | null>(null);
   const [modalEndpoint, setModalEndpoint] = useState('');
   const [modalSecret, setModalSecret] = useState('');
-
-  // Phone Numbers State
-  const [demoNumbers, setDemoNumbers] = useState<DemoPhoneNumber[]>([
-    {
-      id: 'num-1',
-      number: '+1 (415) 890-4001',
-      carrier: 'Twilio SIP Trunk',
-      status: 'active',
-      assignedBot: 'voice-test',
-      environment: 'development',
-      dnis: '90004',
-    },
-    {
-      id: 'num-2',
-      number: '+1 (650) 419-2044',
-      carrier: 'LiveKit SIP Dispatch',
-      status: 'active',
-      assignedBot: 'support-agent',
-      environment: 'production',
-      dnis: '90008',
-    },
-    {
-      id: 'num-3',
-      number: '+1 (800) 555-0199',
-      carrier: 'FreeSWITCH Interconnect',
-      status: 'reserved',
-      assignedBot: 'nimbus-care',
-      environment: 'staging',
-      dnis: '90012',
-    },
-  ]);
-  const [addNumberModal, setAddNumberModal] = useState(false);
-  const [newNumber, setNewNumber] = useState('');
-  const [newBotId, setNewBotId] = useState(agents[0]?.id || 'voice-test');
-  const [newEnv, setNewEnv] = useState<'development' | 'staging' | 'production'>('development');
 
   // Cleanup audio playback on unmount
   useEffect(() => {
@@ -213,26 +157,6 @@ export function Library() {
     setActiveModalIntegration(null);
   };
 
-  // Add demo number
-  const handleAddNumber = () => {
-    if (!newNumber.trim()) return;
-    const item: DemoPhoneNumber = {
-      id: `num-${Date.now()}`,
-      number: newNumber.trim(),
-      carrier: 'LiveKit SIP Trunk',
-      status: 'active',
-      assignedBot: newBotId,
-      environment: newEnv,
-      dnis: `90${Math.floor(100 + Math.random() * 900)}`,
-    };
-    setDemoNumbers((prev) => [item, ...prev]);
-    toast.success(`Registered ${item.number}`, {
-      description: `Inbound calls mapped to ${item.assignedBot} (${item.environment}).`,
-    });
-    setNewNumber('');
-    setAddNumberModal(false);
-  };
-
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
       {/* Header */}
@@ -264,7 +188,7 @@ export function Library() {
             { value: 'voices', label: `Voice Catalog (${VOICE_CATALOG.length})` },
             { value: 'providers', label: `Runtime Providers (${providers.length})` },
             { value: 'integrations', label: `Integrations & Tools (${INTEGRATIONS_CATALOG.length})` },
-            { value: 'numbers', label: `Telephony & SIP (${demoNumbers.length})` },
+            { value: 'numbers', label: 'Phone numbers' },
           ]}
           value={tab}
           onChange={(v) => setTab(v as Tab)}
@@ -612,95 +536,7 @@ export function Library() {
         </div>
       )}
 
-      {/* =========================================================================
-          TAB 4: TELEPHONY & SIP NUMBERS
-      ========================================================================= */}
-      {tab === 'numbers' && (
-        <div className="mt-6 space-y-6">
-          <div className="rounded-xl border border-line bg-surface p-5 shadow-panel">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-ink">Inbound Phone Numbers & SIP Routing</h2>
-                  <DemoDataBadge label="Provisioning Preview" detail="Shows SIP trunk lines and dispatch rules connecting to bots." />
-                </div>
-                <p className="mt-0.5 text-xs text-muted">
-                  Direct inward dialing (DID) numbers and SIP trunks routed directly to deployed agents and environments.
-                </p>
-              </div>
-              <Button variant="primary" size="sm" onClick={() => setAddNumberModal(true)}>
-                <PlusIcon className="h-4 w-4" />
-                Assign Number
-              </Button>
-            </div>
-          </div>
-
-          <Accordion
-            items={demoNumbers}
-            onReorder={setDemoNumbers}
-            enableReordering={true}
-            enableDragAndDrop={true}
-            pagination={{
-              page: 1,
-              pageSize: 5,
-              totalItems: demoNumbers.length,
-              onPageChange: (_page) => {
-                // no-op
-              },
-              pageSizeOptions: [3, 5, 10],
-            }}
-          >
-            {demoNumbers.map((num, idx, arr) => {
-              const isFirst = idx === 0;
-              const isLast = idx === arr.length - 1;
-
-              return (
-                <AccordionItem
-                  key={num.id}
-                  id={num.id}
-                  index={idx}
-                  isFirst={isFirst}
-                  isLast={isLast}
-                >
-                  <AccordionHeader
-                    id={num.id}
-                    icon={<PhoneCallIcon className="h-4 w-4 text-accent" />}
-                    title={num.number}
-                    subtitle={`Carrier: ${num.carrier} · Assigned: ${num.assignedBot} · DNIS: ${num.dnis}`}
-                    badge={
-                      <div className="flex items-center gap-1.5">
-                        <StatusChip tone={num.status === 'active' ? 'success' : 'neutral'}>
-                          {num.status === 'active' ? 'Serving Calls' : num.status}
-                        </StatusChip>
-                        <span className="capitalize rounded-full bg-subtle px-2 py-0.5 text-[11px] font-medium text-ink-soft">
-                          {num.environment}
-                        </span>
-                      </div>
-                    }
-                  />
-
-                  <AccordionContent>
-                    <div className="grid gap-4 sm:grid-cols-3 text-xs">
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">Assigned Agent</span>
-                        <span className="text-ink font-semibold mt-1 block">{num.assignedBot}</span>
-                      </div>
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">DNIS Routing Target</span>
-                        <span className="text-ink font-mono mt-1 block">{num.dnis}</span>
-                      </div>
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">SIP Trunk Carrier</span>
-                        <span className="text-ink font-medium mt-1 block">{num.carrier}</span>
-                      </div>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-        </div>
-      )}
+      {tab === 'numbers' && <NumbersPanel />}
 
       {/* Integration Connection Modal */}
       {activeModalIntegration && (
@@ -750,64 +586,6 @@ export function Library() {
         </Dialog>
       )}
 
-      {/* Add Number Modal */}
-      {addNumberModal && (
-        <Dialog
-          open={addNumberModal}
-          onClose={() => setAddNumberModal(false)}
-          title="Assign Telephony Inbound Line"
-          description="Route an E.164 phone number to one of your Weave Studio bots via SIP trunking."
-          footer={
-            <>
-              <Button variant="ghost" onClick={() => setAddNumberModal(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" onClick={handleAddNumber} disabled={!newNumber.trim()}>
-                Register Number
-              </Button>
-            </>
-          }
-        >
-          <div className="space-y-4">
-            <div>
-              <label className="text-xs font-medium text-ink-soft block mb-1">Phone Number (E.164 format)</label>
-              <input
-                type="tel"
-                placeholder="+1 (555) 000-1234"
-                value={newNumber}
-                onChange={(e) => setNewNumber(e.target.value)}
-                className={cn(inputClass, 'font-mono text-xs')}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-ink-soft block mb-1">Route to Agent</label>
-              <select
-                value={newBotId}
-                onChange={(e) => setNewBotId(e.target.value)}
-                className={cn(inputClass, 'text-xs')}
-              >
-                {agents.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} ({a.id})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-ink-soft block mb-1">Environment</label>
-              <select
-                value={newEnv}
-                onChange={(e) => setNewEnv(e.target.value as any)}
-                className={cn(inputClass, 'text-xs')}
-              >
-                <option value="development">Development</option>
-                <option value="staging">Staging</option>
-                <option value="production">Production</option>
-              </select>
-            </div>
-          </div>
-        </Dialog>
-      )}
     </div>
   );
 }

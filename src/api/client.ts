@@ -15,6 +15,9 @@ import type {
   KnowledgeFile,
   KnowledgeSearchResult,
   KnowledgeStatus,
+  NumberCheck,
+  NumberSettings,
+  PhoneNumber,
   PromptPreview,
   ProvidersAnswer,
   Published,
@@ -365,19 +368,19 @@ export const api = {
   redactionEntities: (opts?: RequestOptions): Promise<{ entities: Array<{ kind: string; how: string }> }> =>
     request('GET', '/redaction/entities', opts),
 
-  numberSettings: (opts?: RequestOptions): Promise<unknown> =>
+  numberSettings: (opts?: RequestOptions): Promise<NumberSettings> =>
     request('GET', '/numbers/settings', opts),
 
-  listNumbers: (opts?: RequestOptions): Promise<unknown[]> =>
+  listNumbers: (opts?: RequestOptions): Promise<{ numbers: PhoneNumber[] }> =>
     request('GET', '/numbers', opts),
 
-  checkNumber: (number: string, opts?: RequestOptions): Promise<{ status: string; owner?: unknown; warnings?: string[]; reason?: string }> =>
+  checkNumber: (number: string, opts?: RequestOptions): Promise<NumberCheck> =>
     request('GET', `/numbers/check?number=${enc(number)}`, opts),
 
-  listBotNumbers: (id: string, opts?: RequestOptions): Promise<unknown[]> =>
+  listBotNumbers: (id: string, opts?: RequestOptions): Promise<{ numbers: PhoneNumber[] }> =>
     request('GET', `/bots/${enc(id)}/numbers`, opts),
 
-  createNumber: (id: string, body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
+  createNumber: (id: string, body: { number: string; environment: string; record_audio?: boolean }, opts?: RequestOptions): Promise<unknown> =>
     request('POST', `/bots/${enc(id)}/numbers`, { ...opts, body }),
 
   changeNumber: (id: string, number: string, body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>
