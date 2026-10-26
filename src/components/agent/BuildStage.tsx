@@ -13,6 +13,7 @@ import { DetailedView } from './build/DetailedView';
 import { JsonView } from './build/JsonView';
 import { WorkflowCanvas } from './build/WorkflowCanvas';
 import { KnowledgeSection } from './build/KnowledgeSection';
+import { ActionsBlock, KnowledgeBlock, ReachBlock } from './setup/SimpleBlocks';
 import { GuardrailsSection } from './build/GuardrailsSection';
 import { ValidationPanel } from './ValidationPanel';
 import { ConcurrentEditBanner } from './ConcurrentEditBanner';
@@ -209,7 +210,15 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
                 <h2 className="text-base font-semibold text-ink">{current?.label}</h2>
                 <p className="text-[13px] text-muted">{current?.description}</p>
               </div>
-              {section === 'knowledge' && <KnowledgeSection editor={editor} />}
+              {section === 'channels' && <SimpleTop title="Where people reach it"><ReachBlock editor={editor} /></SimpleTop>}
+              {section === 'tools' && <SimpleTop title="What it can do"><ActionsBlock editor={editor} /></SimpleTop>}
+              {section === 'knowledge' &&
+            <>
+                  <SimpleTop title="What it knows"><KnowledgeBlock editor={editor} /></SimpleTop>
+                  <h3 className="mb-3 text-sm font-semibold text-ink">Every knowledge base</h3>
+                  <KnowledgeSection editor={editor} />
+                </>
+            }
               {section === 'guardrails' && <GuardrailsSection editor={editor} onOpenJson={() => setView('json')} />}
               {parts.length > 0 &&
             <GuidedView
@@ -257,5 +266,15 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
         currentConfig={editor.config}
         onConfigImported={editor.replaceConfig} />
     </div>);
+
+}
+
+/** The plain controls at the top of a section (the same ones the guided setup uses). */
+function SimpleTop({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section aria-label={title} className="mb-8">
+      <h3 className="mb-3 text-sm font-semibold text-ink">{title}</h3>
+      {children}
+    </section>);
 
 }
