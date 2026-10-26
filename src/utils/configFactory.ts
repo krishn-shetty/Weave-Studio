@@ -1,5 +1,9 @@
 import type { AgentConfig } from '../types/studio';
 import type { Starter } from '../data/starters';
+import { VOICE_CATALOG } from '../data/voiceCatalog';
+
+// A real Cartesia voice id from the voice catalogue (the API has no voice list), so a new agent can speak.
+const STARTER_VOICE_ID = VOICE_CATALOG.find((v) => v.provider === 'Cartesia')?.voiceId;
 
 interface BuildInput {
   id: string;
@@ -39,7 +43,7 @@ export function buildConfig({ id, name, company, starter }: BuildInput): AgentCo
       models: {
         llm: { provider: 'openai', model: 'gpt-4.1-mini' },
         stt: { provider: 'deepgram', model: 'nova-3' },
-        tts: { provider: 'cartesia', model: 'sonic-3', voice_id: 'maya', voice: 'maya' },
+        tts: { provider: 'cartesia', model: 'sonic-3', voice_id: STARTER_VOICE_ID, voice: STARTER_VOICE_ID },
       },
       conversation: {
         inactivity_timeout_s: 20,
@@ -143,15 +147,9 @@ export function normalizeConfig(raw: Partial<AgentConfig> | null | undefined): A
     c.persona?.recording_notice ?? c.persona?.disclosures?.recording_notice
   );
 
-  const ttsVoice =
-    c.defaults?.models?.tts?.voice ??
-    c.defaults?.models?.tts?.voice_id ??
-    'maya';
-
-  const ttsVoiceId =
-    c.defaults?.models?.tts?.voice_id ??
-    c.defaults?.models?.tts?.voice ??
-    'maya';
+  // No invented voice: a config without one keeps none.
+  const ttsVoice: string | undefined = c.defaults?.models?.tts?.voice ?? c.defaults?.models?.tts?.voice_id;
+  const ttsVoiceId: string | undefined = c.defaults?.models?.tts?.voice_id ?? c.defaults?.models?.tts?.voice;
 
   const ttsModel =
     c.defaults?.models?.tts?.model ??

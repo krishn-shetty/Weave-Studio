@@ -9,7 +9,9 @@ import { Dialog } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { bumpVersion } from '../../utils/format';
 import { describePath } from '../../utils/validate';
-import { draftChangeCount, latestVersion, missingSecrets } from '../../utils/agentStatus';
+import { draftChangeCount, latestVersion } from '../../utils/agentStatus';
+import { missingSecrets } from '../../utils/providerOptions';
+import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
 
 interface PublishDialogProps {
@@ -50,7 +52,8 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
 
   const latest = agent ? latestVersion(agent) : undefined;
   const report = editor.validation;
-  const missing = useMemo(() => report ? missingSecrets(report.secrets_required) : [], [report]);
+  const keys = useSecretKeys();
+  const missing = useMemo(() => report ? missingSecrets(report.secrets_required, keys) : [], [report, keys]);
   const changes = agent ? draftChangeCount(agent) : 0;
   if (!agent || !report || !editor.config) return null;
 

@@ -1,3 +1,10 @@
+// Labels, secret names and model suggestions for model providers. A CATALOGUE kept by hand, not a live check.
+//
+// Which providers can be chosen, and whether their key is set, comes from the server (GET /providers, see
+// hooks/useProviders.ts): a provider in this file is only offered when the server reports it installed for that stage.
+// Model ids are suggestions; the provider decides what an account can use. Voices are in voiceCatalog.ts (the API has
+// no voice list). Secret names match the `default_secret` GET /providers reports.
+
 export interface ProviderModel {
   id: string;
   label: string;
@@ -11,7 +18,20 @@ export interface ProviderOption {
   models: ProviderModel[];
 }
 
-// Only providers the runtime supports are listed (FR-11).
+/** Display names for provider ids GET /providers can report. */
+export const providerLabels: Record<string, string> = {
+  openai: 'OpenAI',
+  openai_compatible: 'OpenAI-compatible',
+  anthropic: 'Anthropic',
+  google: 'Google',
+  groq: 'Groq',
+  deepgram: 'Deepgram',
+  assemblyai: 'AssemblyAI',
+  cartesia: 'Cartesia',
+  elevenlabs: 'ElevenLabs',
+  silero: 'Silero',
+};
+
 export const llmProviders: ProviderOption[] = [
 {
   id: 'openai',
@@ -34,6 +54,12 @@ export const llmProviders: ProviderOption[] = [
   label: 'Groq',
   secret: 'GROQ_API_KEY',
   models: [{ id: 'llama-3.3-70b', label: 'Llama 3.3 70B', note: 'Very low latency, open model.' }]
+},
+{
+  id: 'anthropic',
+  label: 'Anthropic',
+  secret: 'ANTHROPIC_API_KEY',
+  models: []
 }];
 
 
@@ -52,26 +78,10 @@ export const sttProviders: ProviderOption[] = [
 }];
 
 
+// Voices are not listed here: see voiceCatalog.ts.
 export const ttsProviders: ProviderOption[] = [
-{
-  id: 'cartesia',
-  label: 'Cartesia',
-  secret: 'CARTESIA_API_KEY',
-  models: [
-  { id: 'maya', label: 'Maya', note: 'Warm, friendly female voice' },
-  { id: 'theo', label: 'Theo', note: 'Calm, measured male voice' },
-  { id: 'ava', label: 'Ava', note: 'Bright, upbeat female voice' }]
-
-},
-{
-  id: 'elevenlabs',
-  label: 'ElevenLabs',
-  secret: 'ELEVENLABS_API_KEY',
-  models: [
-  { id: 'rachel', label: 'Rachel', note: 'Conversational female voice' },
-  { id: 'adam', label: 'Adam', note: 'Deep, steady male voice' }]
-
-}];
+{ id: 'cartesia', label: 'Cartesia', secret: 'CARTESIA_API_KEY', models: [] },
+{ id: 'elevenlabs', label: 'ElevenLabs', secret: 'ELEVEN_API_KEY', models: [] }];
 
 
 export const languages = [
@@ -89,6 +99,3 @@ export const connectionSecrets: Record<string, string> = {
   calendar: 'CALENDAR_API_TOKEN',
   helpdesk: 'HELPDESK_API_TOKEN'
 };
-
-// Secret NAMES the server reports it can find. Values never reach the browser.
-export const serverSecrets: string[] = ['OPENAI_API_KEY', 'DEEPGRAM_API_KEY', 'CARTESIA_API_KEY', 'CRM_API_TOKEN'];

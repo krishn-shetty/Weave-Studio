@@ -2,7 +2,8 @@ import React from 'react';
 import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react';
 import type { AgentConfig, Issue, Path, ValidationReport } from '../../types/studio';
 import { describePath } from '../../utils/validate';
-import { missingSecrets } from '../../utils/agentStatus';
+import { secretState } from '../../utils/providerOptions';
+import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
 
 interface ValidationPanelProps {
@@ -13,7 +14,7 @@ interface ValidationPanelProps {
 }
 
 export function ValidationPanel({ validation, validating, config, onGoTo }: ValidationPanelProps) {
-  const missing = missingSecrets(validation.secrets_required);
+  const keys = useSecretKeys();
   const clean = validation.valid && validation.warnings.length === 0 && validation.unsupported.length === 0;
 
   return (
@@ -78,7 +79,7 @@ export function ValidationPanel({ validation, validating, config, onGoTo }: Vali
 
         <div>
           <h3 className="text-[13px] font-semibold text-ink">Secrets the server needs</h3>
-          <p className="mt-0.5 text-xs text-muted">Names only. Admins set values on the server; Studio never sees them.</p>
+          <p className="mt-0.5 text-xs text-muted">Names only. Admins set values on the server; Studio never sees them. The server reports on provider keys; other secrets are checked when you deploy.</p>
           <ul className="mt-2 space-y-1">
             {validation.secrets_required.map((s) =>
             <li key={s} className="flex items-center justify-between gap-2 text-xs">
@@ -86,7 +87,7 @@ export function ValidationPanel({ validation, validating, config, onGoTo }: Vali
                   <KeyRoundIcon className="h-3 w-3 text-muted" aria-hidden />
                   {s}
                 </span>
-                {missing.includes(s) ? <span className="text-warning">Missing</span> : <span className="text-success">Found</span>}
+                {secretState(s, keys) === 'missing' ? <span className="text-warning">Missing</span> : secretState(s, keys) === 'found' ? <span className="text-success">Found</span> : <span className="text-muted">Checked at deploy</span>}
               </li>
             )}
           </ul>

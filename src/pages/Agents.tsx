@@ -39,7 +39,9 @@ import {
 } from '../components/ui/accordion';
 import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { validateConfig } from '../utils/validate';
-import { currentDeployments, draftChangeCount, environments, envShort, envLabel, latestVersion, missingSecrets } from '../utils/agentStatus';
+import { currentDeployments, draftChangeCount, environments, envShort, envLabel, latestVersion } from '../utils/agentStatus';
+import { missingSecrets } from '../utils/providerOptions';
+import { useSecretKeys } from '../hooks/useProviders';
 import { timeAgo } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
 
@@ -100,6 +102,7 @@ export function Agents() {
     setParams(next, { replace: true });
   };
 
+  const secretKeys = useSecretKeys();
   const rows = useMemo(
     () =>
       agents.map((a) => {
@@ -108,11 +111,11 @@ export function Agents() {
           : validateConfig(a.draft.config);
         const latest = latestVersion(a);
         const current = currentDeployments(a);
-        const missing = latest?.config ? missingSecrets(validateConfig(latest.config).secrets_required) : [];
+        const missing = latest?.config ? missingSecrets(validateConfig(latest.config).secrets_required, secretKeys) : [];
         const isPinned = pinnedAgentIds.includes(a.id);
         return { agent: a, report, latest, current, missing, changes: draftChangeCount(a), isPinned };
       }),
-    [agents, pinnedAgentIds]
+    [agents, pinnedAgentIds, secretKeys]
   );
 
   const filtered = useMemo(() => {

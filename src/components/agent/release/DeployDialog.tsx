@@ -7,7 +7,9 @@ import { useStudio, type DeployOutcome } from '../../../contexts/StudioContext';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
-import { currentDeployments, environments, envLabel, missingSecrets } from '../../../utils/agentStatus';
+import { currentDeployments, environments, envLabel } from '../../../utils/agentStatus';
+import { missingSecrets, secretState } from '../../../utils/providerOptions';
+import { useSecretKeys } from '../../../hooks/useProviders';
 import { validateConfig } from '../../../utils/validate';
 import { useVersionConfig } from '../../../hooks/useVersionConfig';
 import { cn, easeOut, inputClass } from '../../../utils/styles';
@@ -37,6 +39,7 @@ interface CheckRow {
 
 export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion }: DeployDialogProps) {
   const { deploy } = useStudio();
+  const keys = useSecretKeys();
   const { can } = useAuth();
   const [env, setEnv] = useState<EnvironmentName>('development');
   const [version, setVersion] = useState('');
@@ -62,7 +65,8 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   const versionConfig = useVersionConfig(agent, v?.version);
   const vConfig = versionConfig.config;
   const report = vConfig ? validateConfig(vConfig) : null;
-  const missing = report ? missingSecrets(report.secrets_required) : [];
+  const missing = report ? missingSecrets(report.secrets_required, keys) : [];
+  const unchecked = report ? report.secrets_required.filter((s) => secretState(s, keys) === 'unknown') : [];
   const current = currentDeployments(agent)[env];
   const isProd = env === 'production';
   const allowed = isProd ? can('deploy_production') : can('deploy');
@@ -73,6 +77,8 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   [
   missing.length ?
   { ok: false, title: `${missing.length} ${missing.length === 1 ? 'secret is' : 'secrets are'} missing on the server`, detail: `${missing.join(', ')} — calls that need them will fail. This is advice, not a blocker.` } :
+  unchecked.length ?
+  { ok: true, title: 'Provider keys are set; other secrets are checked when you deploy', detail: `Not checked from here: ${unchecked.join(', ')}` } :
   { ok: true, title: 'All secrets found on the server', detail: report.secrets_required.join(', ') },
   report.unsupported.length ?
   { ok: false, title: 'Uses features that aren’t available yet', detail: report.unsupported.map((u) => `${u.feature} (${u.where})`).join('; ') } :

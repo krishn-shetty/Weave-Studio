@@ -1,7 +1,6 @@
 import type { Agent, Deployment, EnvironmentName, StageId, Version } from '../types/studio';
 import { diffConfigs, meaningfulChanges } from './diff';
 import { validateConfig } from './validate';
-import { serverSecrets } from '../data/providers';
 
 export const environments: EnvironmentName[] = ['development', 'staging', 'production'];
 
@@ -34,7 +33,6 @@ export function draftChangeCount(agent: Agent): number | null {
   return meaningfulChanges(diffConfigs(latest.config, agent.draft.config)).length;
 }
 
-export const missingSecrets = (required: string[]): string[] => required.filter((s) => !serverSecrets.includes(s));
 
 export interface NextStep {
   title: string;

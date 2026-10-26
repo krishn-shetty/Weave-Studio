@@ -1,3 +1,10 @@
+// Voices offered in the voice pickers and the Library. A CATALOGUE kept by hand, not a live check.
+//
+// The Agent Builder API has no voice list (GET /providers lists providers, not voices), so the voices come from the
+// providers themselves: ElevenLabs premade voices (ids and samples from ElevenLabs' public voice library) and voices
+// from the Cartesia voice library. A voice is only offered for a provider GET /providers reports installed; any other
+// voice id can still be typed in. Whether an account can use a voice is decided by the provider.
+
 export interface CatalogVoice {
   id: string;
   name: string;

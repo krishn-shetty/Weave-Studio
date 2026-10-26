@@ -10,10 +10,13 @@ import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { Segmented } from '../../ui/Segmented';
 import { StatusChip } from '../../ui/StatusChip';
-import { languages, llmProviders, ttsProviders } from '../../../data/providers';
+import { languages, llmProviders } from '../../../data/providers';
+import { VOICE_CATALOG } from '../../../data/voiceCatalog';
+import { useProviders } from '../../../hooks/useProviders';
+import { providersFor, voicesFor } from '../../../utils/providerOptions';
 import { fieldId } from '../../../utils/path';
 import { getInstructionsText, getLanguageCode, issuesAt } from '../../../utils/validate';
-import { missingProviderKey } from '../../../utils/settingOptions';
+import { firstVoiceOf, missingProviderKey } from '../../../utils/settingOptions';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
 interface GuidedViewProps {
@@ -30,6 +33,7 @@ const tones: {value: Tone;label: string;}[] = [
 
 export function GuidedView({ editor, onMore }: GuidedViewProps) {
   const { config, validation, update, canEdit } = editor;
+  const { answer: providers, error: providersError } = useProviders();
   if (!config || !validation) return null;
   const disabled = !canEdit;
   const err = (p: Path) => issuesAt(validation.errors, p)[0]?.message;
@@ -41,15 +45,20 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
   const declared = config.tools ?? [];
   const undeclared = (entry?.tools ?? []).filter((t) => !declared.some((d) => d.id === t));
 
-  const llmProvider = llmProviders.find((p) => p.id === config.defaults?.models?.llm?.provider);
-  const ttsProvider = ttsProviders.find((p) => p.id === config.defaults?.models?.tts?.provider);
-  const llmMissing = missingProviderKey('defaults.models.llm.provider', config.defaults?.models?.llm?.provider ?? '');
-  const ttsMissing = missingProviderKey('defaults.models.tts.provider', config.defaults?.models?.tts?.provider ?? '');
+  const llmProviderId = config.defaults?.models?.llm?.provider;
+  const ttsProviderId = config.defaults?.models?.tts?.provider;
+  const currentVoice = config.defaults?.models?.tts?.voice_id ?? config.defaults?.models?.tts?.voice;
+  const llmModels = llmProviders.find((p) => p.id === llmProviderId)?.models ?? [];
+  const voices = voicesFor(ttsProviderId, VOICE_CATALOG);
+  const providerChoices = (stage: 'llm' | 'tts', current: string | undefined) =>
+  providersFor(stage, providers, current).map((p) => ({ value: p.value, label: p.unlisted ? `${p.label} (not reported)` : p.label }));
+  const listNote = providersError ? `The provider list could not be loaded (${providersError}); only the current choice is shown.` : undefined;
+  const llmMissing = missingProviderKey('defaults.models.llm.provider', llmProviderId ?? '', providers);
+  const ttsMissing = missingProviderKey('defaults.models.tts.provider', ttsProviderId ?? '', providers);
 
   const setProvider = (kind: 'llm' | 'tts', id: string) => {
-    const list = kind === 'llm' ? llmProviders : ttsProviders;
     update(['defaults', 'models', kind, 'provider'], id);
-    const first = list.find((p) => p.id === id)?.models[0]?.id;
+    const first = kind === 'llm' ? llmProviders.find((p) => p.id === id)?.models[0]?.id : firstVoiceOf(id);
     if (first) {
       if (kind === 'llm') {
         update(['defaults', 'models', kind, 'model'], first);
@@ -156,38 +165,59 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           id={fieldId('defaults.models.tts.voice')}
           label="Voice"
           error={err(['defaults', 'models', 'tts'])}
-          warning={ttsMissing ? `The server doesn’t have ${ttsMissing} yet. Voice calls will fail until an admin adds it.` : undefined}>
+          warning={ttsMissing ? `The server doesn’t have ${ttsMissing} yet. Voice calls will fail until an admin adds it.` : listNote}>
           
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[13px] text-muted">Provider</span>
-            <Segmented size="sm" label="Voice provider" options={ttsProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults?.models?.tts?.provider ?? ''} onChange={(v) => !disabled && setProvider('tts', v)} />
+            <Segmented size="sm" label="Voice provider" options={providerChoices('tts', ttsProviderId)} value={ttsProviderId ?? ''} onChange={(v) => !disabled && setProvider('tts', v)} />
           </div>
+          {voices.length === 0 ?
+          <div>
+              <p className="mb-1.5 text-[13px] text-muted">No voices are listed for this provider here. Enter the provider’s voice id.</p>
+              <input
+              id={`${fieldId('defaults.models.tts.voice')}-input`}
+              className={cn(inputClass, 'max-w-sm font-mono')}
+              value={currentVoice ?? ''}
+              disabled={disabled}
+              spellCheck={false}
+              onChange={(e) => {
+                update(['defaults', 'models', 'tts', 'voice_id'], e.target.value);
+                update(['defaults', 'models', 'tts', 'voice'], e.target.value);
+              }} />
+
+            </div> :
+
           <div role="radiogroup" aria-label="Voice" className="grid gap-2 sm:grid-cols-3">
-            {(ttsProvider?.models ?? []).map((v, i) => {
-              const active = (config.defaults?.models?.tts?.voice_id ?? config.defaults?.models?.tts?.voice) === v.id;
+            {voices.map((v, i) => {
+              const active = currentVoice === v.voiceId;
               return (
                 <button
-                  key={v.id}
+                  key={v.voiceId}
                   type="button"
                   role="radio"
                   aria-checked={active}
                   disabled={disabled}
+                  title={`Voice id: ${v.voiceId}`}
                   id={i === 0 ? `${fieldId('defaults.models.tts.voice')}-input` : undefined}
                   onClick={() => {
-                    update(['defaults', 'models', 'tts', 'voice_id'], v.id);
-                    update(['defaults', 'models', 'tts', 'voice'], v.id);
+                    update(['defaults', 'models', 'tts', 'voice_id'], v.voiceId);
+                    update(['defaults', 'models', 'tts', 'voice'], v.voiceId);
                   }}
                   className={cn(
                     'rounded-lg border px-3 py-2.5 text-left transition-[border-color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                     active ? 'border-accent bg-accent-soft/60 ring-1 ring-accent' : 'border-line hover:border-line-strong'
                   )}>
-                  
-                  <span className="block text-sm font-medium text-ink">{v.label}</span>
-                  <span className="block text-xs text-muted">{v.note}</span>
+
+                  <span className="block text-sm font-medium text-ink">{v.name}</span>
+                  <span className="block text-xs text-muted">{v.style} · {v.language}</span>
                 </button>);
 
             })}
           </div>
+          }
+          {voices.length > 0 && currentVoice && !voices.some((v) => v.voiceId === currentVoice) &&
+          <p className="mt-2 text-xs text-muted">Current voice id <span className="font-mono">{currentVoice}</span> is not in this list; it is kept until you pick another.</p>
+          }
         </Field>
       </GuidedSection>
 
@@ -197,14 +227,27 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           label="Model"
           recommended="GPT-4.1 mini"
           error={err(['defaults', 'models', 'llm'])}
-          warning={llmMissing ? `The server doesn’t have ${llmMissing} yet. Tests and calls will fail until an admin adds it.` : undefined}>
+          warning={llmMissing ? `The server doesn’t have ${llmMissing} yet. Tests and calls will fail until an admin adds it.` : listNote}>
           
           <div className="mb-3 flex items-center gap-2">
             <span className="text-[13px] text-muted">Provider</span>
-            <Segmented size="sm" label="Model provider" options={llmProviders.map((p) => ({ value: p.id, label: p.label }))} value={config.defaults?.models?.llm?.provider ?? ''} onChange={(v) => !disabled && setProvider('llm', v)} />
+            <Segmented size="sm" label="Model provider" options={providerChoices('llm', llmProviderId)} value={llmProviderId ?? ''} onChange={(v) => !disabled && setProvider('llm', v)} />
           </div>
-          <div role="radiogroup" aria-label="Model" className="divide-y divide-line rounded-lg border border-line">
-            {(llmProvider?.models ?? []).map((m, i) => {
+          {llmModels.length === 0 &&
+          <div>
+              <p className="mb-1.5 text-[13px] text-muted">No models are suggested for this provider here. Enter the model name the provider uses.</p>
+              <input
+              id={`${fieldId('defaults.models.llm.model')}-input`}
+              className={cn(inputClass, 'max-w-sm font-mono')}
+              value={config.defaults?.models?.llm?.model ?? ''}
+              disabled={disabled}
+              spellCheck={false}
+              onChange={(e) => update(['defaults', 'models', 'llm', 'model'], e.target.value)} />
+
+            </div>
+          }
+          <div role="radiogroup" aria-label="Model" className={cn('divide-y divide-line rounded-lg border border-line', llmModels.length === 0 && 'hidden')}>
+            {llmModels.map((m, i) => {
               const active = config.defaults?.models?.llm?.model === m.id;
               return (
                 <button

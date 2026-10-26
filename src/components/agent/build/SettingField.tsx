@@ -6,6 +6,7 @@ import { Toggle } from '../../ui/Toggle';
 import { fieldId, getAt, parsePath } from '../../../utils/path';
 import { getLanguageCode, issuesAt } from '../../../utils/validate';
 import { missingProviderKey, providerFollowUps, resolveOptions } from '../../../utils/settingOptions';
+import { useProviders } from '../../../hooks/useProviders';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
 interface SettingFieldProps {
@@ -18,7 +19,10 @@ interface SettingFieldProps {
   update: (path: Path, value: unknown) => void;
 }
 
+const PROVIDER_SOURCES = ['llm_providers', 'stt_providers', 'tts_providers'];
+
 export function SettingField({ def, config, errors, warnings, technical, disabled, update }: SettingFieldProps) {
+  const { answer: providers, error: providersError } = useProviders();
   const path = parsePath(def.path);
   let value = getAt(config, path);
   if (def.path === 'post_call.recording' && typeof value === 'object' && value !== null) {
@@ -39,8 +43,9 @@ export function SettingField({ def, config, errors, warnings, technical, disable
   const inputId = `${id}-input`;
   const error = issuesAt(errors, def.path)[0]?.message;
   const warnFromReport = issuesAt(warnings, def.path)[0]?.message;
-  const missingKey = def.type === 'select' ? missingProviderKey(def.path, String(value ?? '')) : null;
-  const warning = warnFromReport ?? (missingKey ? `The server doesn’t have ${missingKey} yet. Tests and calls will fail until an admin adds it.` : undefined);
+  const missingKey = def.type === 'select' ? missingProviderKey(def.path, String(value ?? ''), providers) : null;
+  const listUnavailable = providersError && def.optionsFrom && PROVIDER_SOURCES.includes(def.optionsFrom) ? `The provider list could not be loaded (${providersError}), so only the current choice is shown.` : undefined;
+  const warning = warnFromReport ?? (missingKey ? `The server doesn’t have ${missingKey} yet. Tests and calls will fail until an admin adds it.` : listUnavailable);
 
   const onChange = (v: unknown) => {
     update(path, v);
@@ -82,7 +87,7 @@ export function SettingField({ def, config, errors, warnings, technical, disable
 
     const follow = providerFollowUps[def.path];
     if (follow) {
-      const first = follow.list.find((p) => p.id === v)?.models[0]?.id;
+      const first = follow.first(String(v));
       if (first) {
         update(parsePath(follow.sibling), first);
         if (follow.sibling === 'defaults.models.tts.voice') {
@@ -126,7 +131,7 @@ export function SettingField({ def, config, errors, warnings, technical, disable
       </div>;
 
   } else if (def.type === 'select') {
-    const options = resolveOptions(def, config);
+    const options = resolveOptions(def, config, providers);
     const selectedVal = def.path === 'defaults.language' ? getLanguageCode(value) : String(value ?? '');
     const known = options.some((o) => o.value === selectedVal);
     control = (
@@ -143,7 +148,7 @@ export function SettingField({ def, config, errors, warnings, technical, disable
           }
         }}
       >
-        {!known && <option value={selectedVal}>{selectedVal} (not supported)</option>}
+        {!known && <option value={selectedVal}>{selectedVal} (not in the list)</option>}
         {options.map((o) => (
           <option key={o.value} value={o.value}>{o.label}</option>
         ))}

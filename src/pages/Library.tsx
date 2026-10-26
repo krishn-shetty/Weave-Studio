@@ -29,7 +29,7 @@ import { api } from '../api/client';
 import { useStudio } from '../contexts/StudioContext';
 import { VOICE_CATALOG, type CatalogVoice } from '../data/voiceCatalog';
 import { INTEGRATIONS_CATALOG, type IntegrationItem } from '../data/integrationsCatalog';
-import type { Provider } from '../api/types';
+import { useProviders } from '../hooks/useProviders';
 import { cn, inputClass } from '../utils/styles';
 
 type Tab = 'voices' | 'providers' | 'integrations' | 'numbers';
@@ -55,9 +55,9 @@ export function Library() {
   const { agents } = useStudio();
   const [tab, setTab] = useState<Tab>('voices');
 
-  // Real backend providers
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
+  // GET /providers, shared with the pickers in Build
+  const { answer: providersAnswer, error: providersError, loading: loadingProviders, reload: loadProviders } = useProviders();
+  const providers = useMemo(() => providersAnswer?.providers ?? [], [providersAnswer]);
 
   // Voice Catalog State
   const [voiceQuery, setVoiceQuery] = useState('');
@@ -117,25 +117,6 @@ export function Library() {
   const [newNumber, setNewNumber] = useState('');
   const [newBotId, setNewBotId] = useState(agents[0]?.id || 'voice-test');
   const [newEnv, setNewEnv] = useState<'development' | 'staging' | 'production'>('development');
-
-  // Load real providers from GET /providers
-  const loadProviders = async () => {
-    setLoadingProviders(true);
-    try {
-      const res = await api.providers();
-      if (res && Array.isArray(res.providers)) {
-        setProviders(res.providers);
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoadingProviders(false);
-    }
-  };
-
-  useEffect(() => {
-    loadProviders();
-  }, []);
 
   // Cleanup audio playback on unmount
   useEffect(() => {
@@ -268,7 +249,7 @@ export function Library() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={loadProviders} disabled={loadingProviders}>
+          <Button variant="secondary" size="sm" onClick={() => void loadProviders()} disabled={loadingProviders}>
             <RefreshCwIcon className={loadingProviders ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
             Sync Providers
           </Button>
@@ -454,18 +435,21 @@ export function Library() {
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="text-base font-semibold text-ink">Live Runtime Providers</h2>
-                  <StatusChip tone="success">Connected to Server</StatusChip>
+                  {providersError ? <StatusChip tone="danger">Could not load</StatusChip> : providersAnswer ? <StatusChip tone="success">From the server</StatusChip> : <StatusChip>Loading…</StatusChip>}
                 </div>
                 <p className="mt-0.5 text-xs text-muted">
-                  Real providers reported by <code className="font-mono">GET /providers</code> on the Agent Builder API.
+                  Providers reported by <code className="font-mono">GET /providers</code> on the Agent Builder API.{providersAnswer?.note ? ` ${providersAnswer.note}` : ''}
                 </p>
+                {providersError && <p className="mt-2 text-xs text-danger" role="alert">{providersError}</p>}
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2" aria-busy={loadingProviders}>
+            {loadingProviders && [0, 1, 2, 3].map((i) => <div key={i} className="h-40 animate-pulse rounded-xl border border-line bg-subtle/50" aria-hidden />)}
             {providers.map((p) => {
               const hasKey = !!p.key_available;
+              const needsKey = !!p.default_secret;
               return (
                 <div key={p.name} className="rounded-xl border border-line bg-surface p-5 shadow-panel">
                   <div className="flex items-start justify-between gap-3">
@@ -500,9 +484,11 @@ export function Library() {
                       <KeyRoundIcon className="h-3.5 w-3.5" />
                       {p.default_secret || 'No Secret Required'}
                     </span>
+                    {needsKey ?
                     <StatusChip tone={hasKey ? 'success' : 'warning'}>
                       {hasKey ? 'Key Configured' : 'Key Missing'}
-                    </StatusChip>
+                    </StatusChip> :
+                    <StatusChip>No key needed</StatusChip>}
                   </div>
                 </div>
               );
