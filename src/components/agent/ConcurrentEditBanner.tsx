@@ -11,7 +11,7 @@ import { formatClock } from '../../utils/format';
 export function ConcurrentEditBanner({ editor }: { editor: DraftEditor }) {
   const remote = editor.remoteDraft;
   if (!remote || editor.conflict) return null;
-  const hasOwnEdits = editor.status !== 'saved';
+  const hasOwnEdits = editor.dirty;
 
   return (
     <div

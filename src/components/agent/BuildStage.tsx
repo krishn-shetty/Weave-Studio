@@ -13,7 +13,6 @@ import { WorkflowCanvas } from './build/WorkflowCanvas';
 import { ValidationPanel } from './ValidationPanel';
 import { ConcurrentEditBanner } from './ConcurrentEditBanner';
 import { ImportExportModal } from './build/ImportExportModal';
-import { ConflictDialog } from './ConflictDialog';
 import { fieldId } from '../../utils/path';
 
 export interface FocusRequest {
@@ -142,9 +141,6 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
         onConfigImported={editor.replaceConfig}
       />
 
-      {editor.conflict && (
-        <ConflictDialog editor={editor} />
-      )}
     </div>);
 
 }

@@ -9,6 +9,7 @@ import type {
   EnvironmentName,
   Issue,
   JobNotification,
+  ValidationReport,
   Version,
   VersionBump,
 } from '../types/studio';
@@ -22,7 +23,8 @@ import { api, ApiError } from '../api/client';
 import type { BotSummary, Preflight, ValidationIssue } from '../api/types';
 
 export type SaveResult =
-  | { ok: true; draft: Draft }
+  /** validation: the server's report on what it saved (PUT /draft returns it). */
+  | { ok: true; draft: Draft; validation: ValidationReport }
   | { ok: false; conflict: Draft };
 
 export type PublishResult =
@@ -434,7 +436,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
           draft,
         }));
         log('saved', agentId, `Saved draft revision ${draft.revision}`);
-        return { ok: true, draft };
+        return { ok: true, draft, validation: res.validation };
       } catch (err: unknown) {
         if (err instanceof ApiError && err.kind === 'conflict') {
           const latest = await api.getDraft(agentId);

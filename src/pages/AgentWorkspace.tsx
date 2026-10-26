@@ -10,6 +10,7 @@ import { MonitorStage } from '../components/agent/MonitorStage';
 import { NextStepBar } from '../components/agent/NextStepBar';
 import { ConflictDialog } from '../components/agent/ConflictDialog';
 import { PublishDialog } from '../components/agent/PublishDialog';
+import { SaveFirstDialog } from '../components/agent/SaveFirstDialog';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Button } from '../components/ui/Button';
 import { useStudio } from '../contexts/StudioContext';
@@ -36,10 +37,11 @@ export function AgentWorkspace() {
     [agentId, navigate]
   );
 
-  // Publish freezes the saved draft, so open it only once the server has the latest edits.
+  // Publish freezes the saved draft: with unsaved edits it asks to save first.
+  const { ensureSaved } = editor;
   const openPublish = useCallback(async () => {
-    if (await editor.flush()) setPublishOpen(true);
-  }, [editor]);
+    if (await ensureSaved('Publish')) setPublishOpen(true);
+  }, [ensureSaved]);
 
   if (editor.agent?.loadError) {
     return (
@@ -87,6 +89,7 @@ export function AgentWorkspace() {
       </div>
       <NextStepBar stage={stage} agentId={agentId} onPublish={openPublish} />
       <ConflictDialog editor={editor} />
+      <SaveFirstDialog editor={editor} />
       <PublishDialog open={publishOpen} onClose={() => setPublishOpen(false)} editor={editor} onGoToField={goToField} />
     </div>);
 

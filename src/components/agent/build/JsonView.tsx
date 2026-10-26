@@ -14,7 +14,7 @@ function notAnObject(value: unknown): string | null {
 }
 
 export function JsonView({ editor }: {editor: DraftEditor;}) {
-  const { config, replaceConfig, canEdit } = editor;
+  const { config, replaceConfig, canEdit, setParseError } = editor;
   const serialized = config ? JSON.stringify(config, null, 2) : '';
   const [text, setText] = useState(serialized);
   const [problem, setProblem] = useState<{message: string;line: number | null;} | null>(null);
@@ -50,7 +50,13 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
     return () => window.clearTimeout(t);
   }, [text, replaceConfig]);
 
-  const lines = text.split('\n').length;
+  // Text that is not a JSON object cannot be saved: the header's Save waits until it is fixed.
+  useEffect(() => {
+    setParseError(problem?.message ?? null);
+  }, [problem, setParseError]);
+  useEffect(() => () => setParseError(null), [setParseError]);
+
+  const lines =text.split('\n').length;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Tab') return;

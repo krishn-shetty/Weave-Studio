@@ -91,8 +91,8 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
               session={session}
               config={config}
               revision={editor.baseRevision}
-              onBeforeStart={editor.flush}
-              hasUnsaved={editor.status === 'unsaved'}
+              onBeforeStart={() => editor.ensureSaved('Start the test')}
+              hasUnsaved={editor.dirty}
             />
             <div className="lg:max-h-[640px]">
               <TracePanel trace={session.trace} />
@@ -102,7 +102,7 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
       ) : activeTab === 'readiness' ? (
         <VoiceReadinessPanel botId={editor.agent!.id} config={config} />
       ) : (
-        <ScenariosRunner agentId={editor.agent!.id} />
+        <ScenariosRunner agentId={editor.agent!.id} ensureSaved={editor.ensureSaved} />
       )}
     </div>
   );

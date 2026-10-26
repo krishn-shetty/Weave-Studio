@@ -123,6 +123,8 @@ export interface Issue {
 export interface UnsupportedFeature {
   feature: string;
   where: string;
+  /** "security": a protection that is configured but not enforced yet. Shown prominently. */
+  severity?: 'security';
 }
 
 export interface ValidationReport {

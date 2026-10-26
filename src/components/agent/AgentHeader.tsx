@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, EyeIcon, LoaderCircleIcon, Redo2Icon, RocketIcon, SparklesIcon, Undo2Icon } from 'lucide-react';
+import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleDotIcon, EyeIcon, LoaderCircleIcon, Redo2Icon, RocketIcon, SaveIcon, Undo2Icon } from 'lucide-react';
 import type { StageId } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import { useAuth } from '../../contexts/AuthContext';
@@ -81,6 +81,19 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
               </Button>
             </div>
 
+            {editor.canEdit &&
+            <Button
+              variant={editor.dirty ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => void editor.save()}
+              disabled={!editor.canSave}
+              aria-keyshortcuts="Control+S Meta+S"
+              title={editor.parseError ? `The JSON view has text that is not valid JSON: ${editor.parseError}` : editor.canSave ? 'Save the draft (Ctrl+S / ⌘S)' : 'Nothing to save'}>
+                {editor.saveState === 'saving' ? <LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden /> : <SaveIcon className="h-4 w-4" aria-hidden />}
+                {editor.saveState === 'saving' ? 'Saving…' : 'Save'}
+              </Button>
+            }
+
             {editor.config && (
               <Button
                 variant="secondary"
@@ -94,7 +107,7 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
             )}
 
             <Button
-              variant="primary"
+              variant={editor.dirty ? 'secondary' : 'primary'}
               onClick={onPublish}
               disabled={!can('publish')}
               title={can('publish') ? 'Freeze the saved draft as a numbered version' : 'Viewers can’t publish'}>
@@ -142,38 +155,35 @@ function SaveIndicator({ editor }: {editor: DraftEditor;}) {
       </span>);
 
   }
-  if (editor.status === 'saving') {
+  const { saveState } = editor;
+  if (saveState === 'saving') {
     return (
       <span className="inline-flex items-center gap-1.5">
         <LoaderCircleIcon className="h-3.5 w-3.5 animate-spin" aria-hidden />
-        Saving…
+        {editor.saveLabel}
       </span>);
 
   }
-  if (editor.status === 'unsaved') return <span className="text-ink-soft">Unsaved changes</span>;
-  if (editor.status === 'conflict') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-danger">
-        <CircleAlertIcon className="h-3.5 w-3.5" aria-hidden />
-        Not saved — someone else saved first
-      </span>);
-
-  }
-  if (editor.status === 'error') {
+  if (saveState === 'conflict' || saveState === 'error') {
     return (
       <span className="inline-flex items-center gap-1.5 text-danger" title={editor.saveError ?? undefined}>
         <CircleAlertIcon className="h-3.5 w-3.5" aria-hidden />
-        Not saved: {editor.saveError}
-        <button type="button" onClick={editor.retrySave} className="font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded">
-          Try again
-        </button>
+        {editor.saveLabel}{editor.saveError ? `: ${editor.saveError}` : ''}
+      </span>);
+
+  }
+  if (editor.dirty) {
+    return (
+      <span className="inline-flex items-center gap-1.5 font-medium text-warning">
+        <CircleDotIcon className="h-3.5 w-3.5" aria-hidden />
+        {editor.saveLabel}
       </span>);
 
   }
   return (
-    <span className="inline-flex items-center gap-1.5">
+    <span className="inline-flex items-center gap-1.5" title={`Draft revision ${editor.baseRevision}`}>
       <CircleCheckIcon className="h-3.5 w-3.5 text-success" aria-hidden />
-      Draft saved {editor.savedAt ? formatClock(editor.savedAt) : ''} · rev {editor.baseRevision}
+      {editor.saveLabel}{editor.savedAt ? ` ${formatClock(editor.savedAt)}` : ''}
     </span>);
 
 }

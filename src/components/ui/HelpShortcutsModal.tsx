@@ -6,8 +6,9 @@ interface HelpShortcutsModalProps {
   onClose: () => void;
 }
 
-// Only shortcuts that are wired up. Ctrl/⌘+S and stage keys are planned (Phase 3) and are added here when they work.
+// Only shortcuts that are wired up. Stage keys are planned (Phase 3) and are added here when they work.
 const shortcuts = [
+  { key: 'Ctrl + S  /  ⌘S', label: 'Save', desc: 'Save the draft, from any page of an agent' },
   { key: 'Ctrl + K  /  ⌘K', label: 'Command palette', desc: 'Jump to any agent, page or setting' },
   { key: 'Ctrl + Z  /  ⌘Z', label: 'Undo', desc: 'Undo the last change to the draft (outside text fields)' },
   { key: 'Ctrl + Y  /  ⌘⇧Z', label: 'Redo', desc: 'Put back the change you undid (outside text fields)' },
@@ -20,7 +21,7 @@ export function HelpShortcutsModal({ open, onClose }: HelpShortcutsModalProps) {
       open={open}
       onClose={onClose}
       title="Keyboard shortcuts"
-      description="Keys that work anywhere in the Studio. Drafts save automatically about a second after you stop typing."
+      description="Keys that work in the Studio. Edits stay unsaved until you press Save or Ctrl+S."
       footer={
         <Button variant="primary" onClick={onClose}>
           Got it

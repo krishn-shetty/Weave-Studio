@@ -91,7 +91,7 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
           </p>
           {hasUnsaved && (
             <p className="mt-3 text-[13px] text-ink-soft">
-              Your unsaved changes will be saved first — tests always use the saved draft.
+              You have unsaved changes. Tests use the saved draft, so you’ll be asked to save first.
             </p>
           )}
           <Button variant="primary" className="mt-5" onClick={start}>

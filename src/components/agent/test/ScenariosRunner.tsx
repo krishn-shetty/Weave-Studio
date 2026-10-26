@@ -13,12 +13,14 @@ import { formatDateTime } from '../../../utils/format';
 
 interface ScenariosRunnerProps {
   agentId: string;
+  /** Resolves true once nothing is unsaved (asking "Save first?" when there is). */
+  ensureSaved: (action: string) => Promise<boolean>;
 }
 
 const POLL_MS = 1500;
 
 /** The draft's test scenarios (GET /tests), run on the server (POST /tests/run) with the results it reports. */
-export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
+export function ScenariosRunner({ agentId, ensureSaved }: ScenariosRunnerProps) {
   const [scenarios, setScenarios] = useState<Scenario[] | null>(null);
   const [latestRun, setLatestRun] = useState<TestRun | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +54,8 @@ export function ScenariosRunner({ agentId }: ScenariosRunnerProps) {
   }, [load]);
 
   const run = async (scenarioId: string | null) => {
+    // The run tests the saved draft: unsaved edits are saved first (or the run does not start).
+    if (!(await ensureSaved('Run the tests'))) return;
     setRunning(scenarioId ?? 'all');
     try {
       const started = await api.runTests(agentId, scenarioId ? { scenarios: [scenarioId] } : {});

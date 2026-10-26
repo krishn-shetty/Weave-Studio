@@ -1,113 +1,149 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { AgentConfig, Draft, Path, ValidationReport } from '../types/studio';
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { validateConfig } from '../utils/validate';
 import { putAt } from '../utils/path';
+import { canSave as canSaveNow, initialSave, isDirty, saveLabel, saveReducer } from '../utils/saveState';
 import { api } from '../api/client';
-
-export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error';
 
 /** How often the editor asks the server whether someone else saved a newer draft. */
 const REMOTE_CHECK_MS = 15_000;
 
+const toJson = (config: AgentConfig | null | undefined): string => (config ? JSON.stringify(config) : '');
+
+/** A request to save before doing something that uses the saved draft (Test, Publish). */
+export interface PendingSave {
+  action: string;
+  resolve: (saved: boolean) => void;
+}
+
+/**
+ * The draft being edited. Edits stay here until the person presses Save (or Ctrl/⌘+S): typing never writes to the
+ * server. Save sends the revision it started from; a 409 keeps the edits and opens ConflictDialog.
+ */
 export function useDraftEditor(agentId: string) {
   const { getAgent, saveDraft } = useStudio();
   const { can } = useAuth();
   const agent = getAgent(agentId);
   const canEdit = can('edit');
 
-  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ? agent.draft.config : null);
+  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ?? null);
+  const [machine, dispatch] = useReducer(saveReducer, toJson(agent?.draft.config), initialSave);
   const [baseRevision, setBaseRevision] = useState(agent?.draft.revision ?? 0);
   const [savedAt, setSavedAt] = useState(agent?.draft.saved_at ?? '');
-  const [status, setStatus] = useState<SaveStatus>('saved');
   const [conflict, setConflict] = useState<Draft | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
   // A newer draft someone else saved, found by checking the server (not by saving).
   const [remoteDraft, setRemoteDraft] = useState<Draft | null>(null);
-  const [validation, setValidation] = useState<ValidationReport | null>(() => config ? validateConfig(config) : null);
+  // The server's report on what was last saved (PUT /draft returns it), and the config it is about.
+  const [serverReport, setServerReport] = useState<{ json: string; report: ValidationReport } | null>(null);
+  const [localReport, setLocalReport] = useState<ValidationReport | null>(() => (config ? validateConfig(config) : null));
   const [validating, setValidating] = useState(false);
+  // The JSON view's text when it is not valid JSON: nothing can be saved until it is fixed.
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [history, setHistory] = useState<AgentConfig[]>([]);
+  const [future, setFuture] = useState<AgentConfig[]>([]);
 
   const configRef = useRef(config);
   configRef.current = config;
-  const statusRef = useRef(status);
-  statusRef.current = status;
+  const machineRef = useRef(machine);
+  machineRef.current = machine;
   const baseRef = useRef(baseRevision);
   baseRef.current = baseRevision;
+  const parseErrorRef = useRef(parseError);
+  parseErrorRef.current = parseError;
 
-  // Load when the agent changes, or once a draft that failed to load has been read.
+  /** Replace the editor's contents with a draft the server has; nothing is unsaved afterwards. */
+  const loadServerDraft = useCallback((draft: Pick<Draft, 'config' | 'revision' | 'saved_at'>) => {
+    configRef.current = draft.config;
+    baseRef.current = draft.revision;
+    setConfig(draft.config);
+    dispatch({ type: 'loaded', json: toJson(draft.config) });
+    setBaseRevision(draft.revision);
+    setSavedAt(draft.saved_at);
+    setConflict(null);
+    setRemoteDraft(null);
+    setParseError(null);
+  }, []);
+
+  // Load when the agent changes, when it first arrives (a deep link opened before the list loaded), or once a draft
+  // that failed to load has been read.
   const loadError = agent?.loadError;
+  const present = !!agent;
   useEffect(() => {
     const a = getAgent(agentId);
     if (!a) return;
-    setConfig(a.draft.config);
-    setBaseRevision(a.draft.revision);
-    setSavedAt(a.draft.saved_at);
-    setStatus('saved');
-    setConflict(null);
-    setSaveError(null);
-    setRemoteDraft(null);
+    loadServerDraft(a.draft);
+    setServerReport(null);
+    setHistory([]);
+    setFuture([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId, loadError]);
+  }, [agentId, loadError, present]);
 
-  // Pick up server-side draft changes (publish moves meta.version on, restore) when we have nothing pending.
+  // Pick up server-side draft changes (a publish moves meta.version on, a restore) when nothing is unsaved.
   const serverRevision = agent?.draft.revision;
   useEffect(() => {
     if (!agent) return;
-    if (statusRef.current === 'saved' && agent.draft.revision !== baseRef.current) {
-      setConfig(agent.draft.config);
-      setBaseRevision(agent.draft.revision);
-      setSavedAt(agent.draft.saved_at);
-    }
+    const m = machineRef.current;
+    if (!isDirty(m) && m.state !== 'saving' && agent.draft.revision !== baseRef.current) loadServerDraft(agent.draft);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverRevision]);
 
-  // Debounced validation (~500 ms after typing stops).
+  // Every change to the editor's config is measured against what the server has.
+  const currentJson = useMemo(() => toJson(config), [config]);
+  useEffect(() => {
+    dispatch({ type: 'edited', json: currentJson });
+  }, [currentJson]);
+
+  // Debounced local check (~500 ms after typing stops).
   useEffect(() => {
     if (!config) return;
     setValidating(true);
     const t = window.setTimeout(() => {
-      setValidation(validateConfig(config));
+      setLocalReport(validateConfig(config));
       setValidating(false);
     }, 500);
     return () => window.clearTimeout(t);
   }, [config]);
 
-  // Resolves true when the server saved the draft. Edits made while the request was in flight stay unsaved.
+  // The server's report while it describes the editor's contents, else the local check.
+  const validation = serverReport && serverReport.json === currentJson ? serverReport.report : localReport;
+
   // Saves run one at a time, so each one sends the revision the previous one got back.
   const queueRef = useRef<Promise<unknown>>(Promise.resolve());
   const saveNow = useCallback(
     async (overwrite: boolean): Promise<boolean> => {
       const current = configRef.current;
       if (!current) return false;
-      if (!overwrite && statusRef.current === 'saved') return true;
-      statusRef.current = 'saving';
-      setStatus('saving');
+      const m = machineRef.current;
+      if (!overwrite && !canSaveNow(m, { parseError: parseErrorRef.current, canEdit })) {
+        return !isDirty(m) && m.state !== 'error' && m.state !== 'conflict' && !parseErrorRef.current;
+      }
+      if (!canEdit) return false;
+      const json = toJson(current);
+      dispatch({ type: 'save_started' });
       try {
         const res = await saveDraft(agentId, current, overwrite ? null : baseRef.current);
         if (res.ok) {
           baseRef.current = res.draft.revision;
-          statusRef.current = configRef.current === current ? 'saved' : 'unsaved';
           setBaseRevision(res.draft.revision);
           setSavedAt(res.draft.saved_at);
           setConflict(null);
-          setSaveError(null);
           setRemoteDraft(null);
-          setStatus(statusRef.current);
+          setServerReport({ json, report: res.validation });
+          dispatch({ type: 'save_succeeded', savedJson: json });
           return true;
         }
-        statusRef.current = 'conflict';
         setConflict(res.conflict);
-        setStatus('conflict');
+        dispatch({ type: 'save_conflicted' });
         return false;
       } catch (err: unknown) {
-        statusRef.current = 'error';
-        setSaveError(err instanceof Error ? err.message : 'The draft could not be saved.');
-        setStatus('error');
+        dispatch({ type: 'save_failed', message: err instanceof Error ? err.message : 'The draft could not be saved.' });
         return false;
       }
     },
-    [agentId, saveDraft]
+    [agentId, saveDraft, canEdit]
   );
   const performSave = useCallback(
     (overwrite = false): Promise<boolean> => {
@@ -117,27 +153,58 @@ export function useDraftEditor(agentId: string) {
     },
     [saveNow]
   );
-  const performSaveRef = useRef(performSave);
-  performSaveRef.current = performSave;
 
-  // Autosave about a second after typing stops.
-  useEffect(() => {
-    if (status !== 'unsaved' || !canEdit) return;
-    const t = window.setTimeout(() => void performSaveRef.current(), 1000);
-    return () => window.clearTimeout(t);
-  }, [config, status, canEdit]);
+  /** Save the edits now. Resolves true when the server has everything. */
+  const save = useCallback(() => performSave(false), [performSave]);
+
+  /** Drop the unsaved edits and go back to what the server has. */
+  const discard = useCallback(() => {
+    const m = machineRef.current;
+    const saved = m.savedJson ? (JSON.parse(m.savedJson) as AgentConfig) : null;
+    configRef.current = saved;
+    setConfig(saved);
+    setParseError(null);
+    dispatch({ type: 'discarded' });
+  }, []);
+
+  /**
+   * Before something that uses the saved draft (a test, a publish): true at once when nothing is unsaved, otherwise
+   * asks "Save first?" and resolves with whether the save worked. A conflict has to be settled first.
+   */
+  const ensureSaved = useCallback((action: string): Promise<boolean> => {
+    const m = machineRef.current;
+    if (m.state === 'conflict') return Promise.resolve(false);
+    if (!isDirty(m) && m.state !== 'error' && !parseErrorRef.current) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => setPendingSave({ action, resolve }));
+  }, []);
+
+  const answerPendingSave = useCallback(
+    async (choice: 'save' | 'cancel') => {
+      const pending = pendingSave;
+      if (!pending) return;
+      if (choice === 'cancel') {
+        setPendingSave(null);
+        pending.resolve(false);
+        return;
+      }
+      const ok = await save();
+      setPendingSave(null);
+      pending.resolve(ok);
+    },
+    [pendingSave, save]
+  );
 
   // Has someone else saved a newer draft? Checked every 15 s while the tab is visible and on returning to it.
   useEffect(() => {
     let controller: AbortController | null = null;
     const check = () => {
-      if (document.visibilityState !== 'visible' || statusRef.current === 'saving') return;
+      if (document.visibilityState !== 'visible' || machineRef.current.state === 'saving') return;
       controller?.abort();
       controller = new AbortController();
       api
         .getDraft(agentId, { signal: controller.signal })
         .then((latest) => {
-          if (statusRef.current === 'saving' || latest.revision <= baseRef.current) return;
+          if (machineRef.current.state === 'saving' || latest.revision <= baseRef.current) return;
           setRemoteDraft({
             bot_id: agentId,
             revision: latest.revision,
@@ -157,10 +224,10 @@ export function useDraftEditor(agentId: string) {
     };
   }, [agentId]);
 
-  // Warn before leaving with unsaved changes.
+  // Warn before closing or reloading the tab with unsaved changes. (Moving inside the app asks in LeaveGuard.)
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (statusRef.current !== 'saved') {
+      if (isDirty(machineRef.current)) {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -169,24 +236,12 @@ export function useDraftEditor(agentId: string) {
     return () => window.removeEventListener('beforeunload', handler);
   }, []);
 
-  // Flush on unmount so in-app navigation never loses edits.
-  useEffect(
-    () => () => {
-      if (statusRef.current === 'unsaved' || statusRef.current === 'error') void performSaveRef.current();
-    },
-    []
-  );
-
-  const [history, setHistory] = useState<AgentConfig[]>([]);
-  const [future, setFuture] = useState<AgentConfig[]>([]);
-
   const undo = useCallback(() => {
     if (!canEdit || history.length === 0 || !config) return;
     const prev = history[history.length - 1];
     setHistory((h) => h.slice(0, -1));
     setFuture((f) => [config, ...f]);
     setConfig(prev);
-    setStatus('unsaved');
   }, [canEdit, history, config]);
 
   const redo = useCallback(() => {
@@ -195,25 +250,27 @@ export function useDraftEditor(agentId: string) {
     setFuture((f) => f.slice(1));
     setHistory((h) => [...h, config]);
     setConfig(next);
-    setStatus('unsaved');
   }, [canEdit, future, config]);
 
+  // Ctrl/⌘+S saves from any page of the agent (and never opens the browser's save dialog). Ctrl/⌘+Z/Y undo and redo
+  // outside text fields, where the field's own undo applies.
+  const saveRef = useRef(save);
+  saveRef.current = save;
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't intercept inside raw textareas or inputs if standard typing
-      const target = e.target as HTMLElement | null;
-      if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT') {
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        void saveRef.current();
         return;
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        if (e.shiftKey) {
-          e.preventDefault();
-          redo();
-        } else {
-          e.preventDefault();
-          undo();
-        }
-      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+      const target = e.target as HTMLElement | null;
+      if (target?.tagName === 'TEXTAREA' || target?.tagName === 'INPUT') return;
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+      } else if (mod && e.key.toLowerCase() === 'y') {
         e.preventDefault();
         redo();
       }
@@ -231,7 +288,6 @@ export function useDraftEditor(agentId: string) {
         setFuture([]);
         return putAt(prev, path, value);
       });
-      setStatus((s) => (s === 'conflict' ? s : 'unsaved'));
     },
     [canEdit]
   );
@@ -246,65 +302,47 @@ export function useDraftEditor(agentId: string) {
         }
         return next;
       });
-      setStatus((s) => s === 'conflict' ? s : 'unsaved');
     },
     [canEdit]
   );
 
-  /** Saves pending edits now. Resolves true when the server has everything (nothing pending, or the save worked). */
-  const flush = useCallback(async (): Promise<boolean> => {
-    if (statusRef.current === 'saved') return true;
-    if (statusRef.current === 'conflict') return false;
-    return performSaveRef.current();
-  }, []);
-
-  const retrySave = useCallback(() => void performSaveRef.current(), []);
-
   /** Replace the editor contents with the newer draft found on the server. */
   const loadRemoteDraft = useCallback(() => {
-    if (!remoteDraft) return;
-    setConfig(remoteDraft.config);
-    baseRef.current = remoteDraft.revision;
-    statusRef.current = 'saved';
-    setBaseRevision(remoteDraft.revision);
-    setSavedAt(remoteDraft.saved_at);
-    setRemoteDraft(null);
-    setConflict(null);
-    setSaveError(null);
-    setStatus('saved');
-  }, [remoteDraft]);
+    if (remoteDraft) loadServerDraft(remoteDraft);
+  }, [remoteDraft, loadServerDraft]);
 
   /** Keep the editor contents and save them over the newer server draft. */
-  const overwriteRemoteDraft = useCallback(() => void performSaveRef.current(true), []);
+  const overwriteRemoteDraft = useCallback(() => void performSave(true), [performSave]);
 
   const resolveConflict = useCallback(
     (choice: 'mine' | 'theirs') => {
       if (!conflict) return;
       if (choice === 'mine') {
-        void performSaveRef.current(true);
+        void performSave(true);
         return;
       }
-      setConfig(conflict.config);
-      baseRef.current = conflict.revision;
-      statusRef.current = 'saved';
-      setBaseRevision(conflict.revision);
-      setSavedAt(conflict.saved_at);
-      setConflict(null);
-      setRemoteDraft(null);
-      setStatus('saved');
+      loadServerDraft(conflict);
     },
-    [conflict]
+    [conflict, performSave, loadServerDraft]
   );
+
+  const dirty = isDirty(machine);
 
   return {
     agent,
     config,
     validation,
     validating,
-    status,
+    /** The save state machine's state (idle, dirty, saving, saved, conflict, error). */
+    saveState: machine.state,
+    saveLabel: saveLabel(machine),
+    saveError: machine.error,
+    dirty,
+    canSave: canSaveNow(machine, { parseError, canEdit }),
+    parseError,
+    setParseError,
     savedAt,
     conflict,
-    saveError,
     remoteDraft,
     canEdit,
     baseRevision,
@@ -314,8 +352,11 @@ export function useDraftEditor(agentId: string) {
     redo,
     update,
     replaceConfig,
-    flush,
-    retrySave,
+    save,
+    discard,
+    ensureSaved,
+    pendingSave,
+    answerPendingSave,
     loadRemoteDraft,
     overwriteRemoteDraft,
     resolveConflict
