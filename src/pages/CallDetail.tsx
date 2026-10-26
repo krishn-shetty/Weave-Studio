@@ -3,17 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import {
   ArrowLeftIcon,
   DownloadIcon,
-  FlaskConicalIcon,
   RefreshCwIcon,
 } from "lucide-react";
-import { toast } from "../components/ui/Toast";
 import { useStudio } from "../contexts/StudioContext";
 import { StatusChip } from "../components/ui/StatusChip";
-import { Button } from "../components/ui/Button";
-import { Dialog } from "../components/ui/Dialog";
 import { channelName, outcomeMeta } from "../components/calls/CallsTable";
 import { formatDateTime, formatDuration, formatOffset } from "../utils/format";
-import { cn, inputClass } from "../utils/styles";
+import { cn } from "../utils/styles";
 import { api } from "../api/client";
 import { useSetBreadcrumbTitle } from "../contexts/BreadcrumbContext";
 import type {
@@ -190,15 +186,6 @@ export function CallDetail() {
       : call.environment.charAt(0).toUpperCase() + call.environment.slice(1);
   }
 
-  const [scenarioOpen, setScenarioOpen] = useState(false);
-  const [scenarioName, setScenarioName] = useState(
-    call ? `Scenario from call ${call.id} (${call.caller})` : "",
-  );
-
-  useEffect(() => {
-    if (call) setScenarioName(`Scenario from call ${call.id} (${call.caller})`);
-  }, [call]);
-
   const handleBack = () => {
     const historyIndex = (window.history.state as { idx?: number } | null)?.idx;
     if (typeof historyIndex === "number" && historyIndex > 0) {
@@ -206,13 +193,6 @@ export function CallDetail() {
     } else {
       navigate("/calls", { replace: true });
     }
-  };
-
-  const handleSaveScenario = () => {
-    setScenarioOpen(false);
-    toast.success(`Scenario saved to ${agent?.name ?? "Agent"}`, {
-      description: `Captured ${transcriptLines.length} turns for repeatable testing.`,
-    });
   };
 
   if (loading) {
@@ -291,52 +271,8 @@ export function CallDetail() {
             <DownloadIcon className="h-3.5 w-3.5 text-muted" />
             Download NDJSON
           </a>
-          <Button
-            variant="secondary"
-            onClick={() => setScenarioOpen(true)}
-            title="Convert this call's conversation and tool trace into a repeatable automated test scenario"
-          >
-            <FlaskConicalIcon className="h-4 w-4 text-accent" />
-            Save as test scenario
-          </Button>
         </div>
       </div>
-
-      <Dialog
-        open={scenarioOpen}
-        onClose={() => setScenarioOpen(false)}
-        title="Save call as test scenario"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setScenarioOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleSaveScenario}>
-              Save scenario
-            </Button>
-          </>
-        }
-      >
-        <p className="text-sm text-muted">
-          Freeze this caller’s exact words and check that your agent produces
-          the expected responses on every future release.
-        </p>
-        <div className="mt-4">
-          <label
-            htmlFor="scenario-name"
-            className="block text-xs font-medium text-ink-soft"
-          >
-            Scenario title
-          </label>
-          <input
-            id="scenario-name"
-            type="text"
-            className={cn(inputClass, "mt-1.5")}
-            value={scenarioName}
-            onChange={(e) => setScenarioName(e.target.value)}
-          />
-        </div>
-      </Dialog>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">
         <section aria-labelledby="transcript-title">

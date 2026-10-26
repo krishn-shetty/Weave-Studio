@@ -272,44 +272,41 @@ export interface CallTranscriptResponse {
   turns: CallDetailTurn[];
 }
 
-export interface ScenarioStep {
-  role: 'caller' | 'agent' | 'check';
-  text?: string;
-  check?: {
-    kind: string;
-    expected?: string;
-    pass?: boolean;
-    actual?: string;
-  };
-}
 
+
+/** One test scenario as GET /bots/{id}/tests lists it. The scenarios themselves live in the draft's config. */
 export interface Scenario {
   id: string;
-  name: string;
-  description?: string;
-  steps?: ScenarioStep[];
-  last_result?: {
-    status: 'passed' | 'failed' | 'running';
-    run_at?: string;
-    duration_ms?: number;
-    failed_step?: number;
-    details?: string;
-  };
+  description: string | null;
+  channel: string;
+  /** "live" needs a real model (costs money); others run scripted. */
+  mode: string;
+  /** How many caller turns it has. */
+  turns: number;
+  expectations: string[];
+  mocks: number;
+  last_result: { status: string; run_id?: string; finished_at?: string } | null;
 }
 
+/** A test run (GET /tests/runs, GET /tests/runs/{id}). The list leaves out per-scenario details. */
 export interface TestRun {
-  id: string;
+  run_id: string;
+  bot?: string;
+  ref?: string;
+  version?: string;
+  config_checksum?: string;
+  options?: { live?: boolean; allow_network?: boolean };
   status: 'running' | 'passed' | 'failed' | 'error';
   started_at: string;
-  finished_at?: string;
-  config_checksum?: string;
-  passed_count?: number;
-  failed_count?: number;
+  finished_at?: string | null;
+  total?: number;
+  counts?: { passed?: number; failed?: number; error?: number; skipped?: number };
+  error?: string | null;
   scenarios?: Array<{
     id: string;
-    name: string;
-    status: 'passed' | 'failed' | 'skipped';
-    duration_ms?: number;
-    error?: string;
+    status: 'passed' | 'failed' | 'skipped' | 'error';
+    duration_s?: number;
+    notes?: string[];
+    error?: string | null;
   }>;
 }
