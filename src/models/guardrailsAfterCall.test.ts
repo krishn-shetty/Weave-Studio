@@ -216,3 +216,17 @@ describe('after the call', () => {
     expect(p).toEqual({ redacted: 'My card is [REDACTED]', found: [{ kind: 'card_number', text: '4111 1111 1111 1111' }], appliesTo: ['saved transcripts and metrics'], modelSees: 'Entities never change what the model hears.' });
   });
 });
+
+import { personalDetailsOf, setPersonalDetails } from './guardrails';
+
+describe('guardrails: a personal-details check on what the caller says', () => {
+  it('switches on with the kinds chosen, is a real pii_detect check, and goes when off', () => {
+    let c = setPersonalDetails(bare(), true, ['card_number', 'email']);
+    expect(personalDetailsOf(c)).toEqual({ on: true, entities: ['card_number', 'email'] });
+    expect(c.guardrails?.input?.[0]).toEqual({ id: 'personal_details', type: 'pii_detect', entities: ['card_number', 'email'], enforcement: 'code', on_trigger: { action: 'redact_in_logs' } });
+    expect(unknownKeys(c)).toEqual([]);
+    expect(setPersonalDetails(c, true, [])).toEqual(c);
+    c = setPersonalDetails(c, false, []);
+    expect(c.guardrails).toBeUndefined();
+  });
+});

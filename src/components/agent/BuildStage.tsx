@@ -14,7 +14,8 @@ import { JsonView } from './build/JsonView';
 import { WorkflowCanvas } from './build/WorkflowCanvas';
 import { KnowledgeSection } from './build/KnowledgeSection';
 import { ActionsBlock, KnowledgeBlock, ReachBlock } from './setup/SimpleBlocks';
-import { GuardrailsSection } from './build/GuardrailsSection';
+import { GuardrailsPage } from './build/GuardrailsPage';
+import { AfterCallPage } from './build/AfterCallPage';
 import { ValidationPanel } from './ValidationPanel';
 import { ConcurrentEditBanner } from './ConcurrentEditBanner';
 import { ImportExportModal } from './build/ImportExportModal';
@@ -49,7 +50,8 @@ const SECTION_PARTS: Record<BuildSection, { parts: GuidedPart[]; groups: Setting
   tools: { parts: ['tools'], groups: ['can_do'] },
   knowledge: { parts: [], groups: [] },
   guardrails: { parts: [], groups: [] },
-  aftercall: { parts: ['records'], groups: ['after', 'records'] },
+  // Everything of After the call is asked on its own page (nothing is asked twice).
+  aftercall: { parts: [], groups: [] },
 };
 
 function highlight(path: Path, minLength: number): boolean {
@@ -219,7 +221,8 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
                   <KnowledgeSection editor={editor} />
                 </>
             }
-              {section === 'guardrails' && <GuardrailsSection editor={editor} onOpenJson={() => setView('json')} />}
+              {section === 'guardrails' && <GuardrailsPage editor={editor} onOpenJson={() => setView('json')} />}
+              {section === 'aftercall' && <AfterCallPage editor={editor} />}
               {parts.length > 0 &&
             <GuidedView
               editor={editor}

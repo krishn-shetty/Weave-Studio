@@ -314,3 +314,28 @@ export function previewWords(p: GuardrailPreview): string {
   const what = p.matched.map((m) => `${m.rule}${m.kinds.length ? ` (${m.kinds.join(', ').replace(/_/g, ' ')})` : ''}`).join(', ');
   return `Found by ${what}. It ${TRIGGER[p.action] ?? p.action ?? 'acts'}.`;
 }
+
+// ---- a personal-details check on what the caller says -------------------------------------------------------------------------------------
+const PII_ID = 'personal_details';
+
+/** The switch's own check (input, pii_detect, id "personal_details"): on, and the kinds it looks for. */
+export function personalDetailsOf(config: AgentConfig): { on: boolean; entities: string[] } {
+  const rule = list<Json>(config?.guardrails?.input).find((r) => isObj(r) && r.id === PII_ID && r.type === 'pii_detect');
+  return { on: !!rule, entities: strings(rule?.entities) };
+}
+
+/**
+ * Switched on, it hides those kinds in what is saved while the agent still hears them (redact_in_logs, checked in code).
+ * The kinds are the server's (GET /redaction/entities); the last one stays (the schema needs one).
+ */
+export function setPersonalDetails(config: AgentConfig, on: boolean, entities: string[]): AgentConfig {
+  return edit(config, (g) => {
+    const input = list<Json>(g.input).filter((r) => !(isObj(r) && r.id === PII_ID));
+    const kinds = tidy(entities);
+    if (on && kinds.length) {
+      const had = list<Json>(config?.guardrails?.input).find((r) => isObj(r) && r.id === PII_ID);
+      input.push({ ...(had ?? {}), id: PII_ID, type: 'pii_detect', entities: kinds, enforcement: had?.enforcement ?? 'code', on_trigger: had?.on_trigger ?? { action: 'redact_in_logs' } });
+    } else if (on) return;
+    g.input = input;
+  });
+}
