@@ -85,7 +85,7 @@ export interface Deployment {
   previous_version: string | null;
   deployed_at: string;
   deployed_by: string;
-  note: string;
+  note: string | null;
 }
 
 export interface Preflight {

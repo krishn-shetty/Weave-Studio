@@ -72,19 +72,40 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
   const canDeployTo = (env: EnvironmentName) => env === 'production' ? can('deploy_production') : can('deploy');
   const rbDeployment = rollbackEnv ? current[rollbackEnv] : undefined;
 
-  const confirmRollback = () => {
-    if (!rollbackEnv) return;
-    const dep = rollback(agent.id, rollbackEnv);
-    if (dep) toast(`Rolling ${envLabel(rollbackEnv)} back to ${dep.version}`, { description: `${rbDeployment?.version} keeps serving until it’s active.` });
-    setRollbackEnv(null);
+  const [releaseBusy, setReleaseBusy] = useState(false);
+
+  const confirmRollback = async () => {
+    if (!rollbackEnv || releaseBusy) return;
+    const env = rollbackEnv;
+    setReleaseBusy(true);
+    try {
+      const result = await rollback(agent.id, env);
+      if (!result) toast.error(`Nothing to roll ${envLabel(env)} back to`);
+      else if (result.deployment.status === 'active') toast.success(`${envLabel(env)} is back on ${result.deployment.version}`);
+      else if (result.deployment.status === 'failed') toast.error(`Rolling ${envLabel(env)} back to ${result.deployment.version} failed`);
+      else toast(`Rolling ${envLabel(env)} back to ${result.deployment.version}`, { description: 'The server has not finished yet. This page shows when it does.' });
+      setRollbackEnv(null);
+    } catch (err: unknown) {
+      toast.error(`Could not roll ${envLabel(env)} back`, { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setReleaseBusy(false);
+    }
   };
 
-  const confirmRestore = () => {
-    if (!restoreTarget) return;
-    restoreVersion(agent.id, restoreTarget);
-    toast.success(`${restoreTarget} restored as your draft`, { description: 'Nothing changed for callers. Test and publish when ready.' });
-    setRestoreTarget(null);
-    navigate(`/agents/${agent.id}/build`);
+  const confirmRestore = async () => {
+    if (!restoreTarget || releaseBusy) return;
+    const target = restoreTarget;
+    setReleaseBusy(true);
+    try {
+      await restoreVersion(agent.id, target);
+      toast.success(`${target} restored as your draft`, { description: 'Nothing changed for callers. Test and publish when ready.' });
+      setRestoreTarget(null);
+      navigate(`/agents/${agent.id}/build`);
+    } catch (err: unknown) {
+      toast.error(`Could not restore ${target}`, { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setReleaseBusy(false);
+    }
   };
 
   return (
@@ -234,7 +255,7 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
         footer={
         <>
             <Button variant="ghost" onClick={() => setRollbackEnv(null)}>Cancel</Button>
-            <Button variant="danger" onClick={confirmRollback} disabled={!rollbackEnv || !canDeployTo(rollbackEnv)}>Roll back</Button>
+            <Button variant="danger" onClick={confirmRollback} disabled={!rollbackEnv || !canDeployTo(rollbackEnv) || releaseBusy}>{releaseBusy ? 'Rolling back…' : 'Roll back'}</Button>
           </>
         }>
         
@@ -251,7 +272,7 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
         footer={
         <>
             <Button variant="ghost" onClick={() => setRestoreTarget(null)}>Cancel</Button>
-            <Button variant="primary" onClick={confirmRestore}>Restore</Button>
+            <Button variant="primary" onClick={confirmRestore} disabled={releaseBusy}>{releaseBusy ? 'Restoring…' : 'Restore'}</Button>
           </>
         }>
         

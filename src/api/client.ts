@@ -258,7 +258,7 @@ export const api = {
     request('GET', `/bots/${enc(id)}/deployments`, opts),
 
   // 17. Get deployment
-  getDeployment: (id: string, deploymentId: string, opts?: RequestOptions): Promise<Deployment | DeployResult> =>
+  getDeployment: (id: string, deploymentId: string, opts?: RequestOptions): Promise<Deployment> =>
     request('GET', `/bots/${enc(id)}/deployments/${enc(deploymentId)}`, opts),
 
   // 18. Start session (LiveKit voice/chat)

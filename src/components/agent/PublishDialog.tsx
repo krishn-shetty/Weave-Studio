@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from '../ui/Toast';
-import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, TriangleAlertIcon } from 'lucide-react';
-import type { Path, VersionBump } from '../../types/studio';
+import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react';
+import type { Issue, Path, VersionBump } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import { useStudio } from '../../contexts/StudioContext';
 import { Dialog } from '../ui/Dialog';
@@ -31,10 +31,18 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
   const agent = editor.agent;
   const [bump, setBump] = useState<VersionBump>('minor');
   const [published, setPublished] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+  // Problems the server reported when it refused to publish (shown instead of the local check).
+  const [serverErrors, setServerErrors] = useState<Issue[] | null>(null);
+  // Warnings the server returned with the published version.
+  const [serverWarnings, setServerWarnings] = useState<Issue[]>([]);
 
   useEffect(() => {
     if (open) {
       setPublished(null);
+      setPublishing(false);
+      setServerErrors(null);
+      setServerWarnings([]);
       setBump(agent?.versions.length ? 'patch' : 'minor');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -46,12 +54,16 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
   const changes = agent ? draftChangeCount(agent) : 0;
   if (!agent || !report || !editor.config) return null;
 
-  const handlePublish = () => {
-    const res = publish(agent.id, bump);
+  const handlePublish = async () => {
+    if (publishing) return;
+    setPublishing(true);
+    const res = await publish(agent.id, bump);
+    setPublishing(false);
     if (!res.ok) {
-      toast.error('This draft can’t be published', { description: `${res.errors.length} problems need fixing first.` });
+      setServerErrors(res.errors);
       return;
     }
+    setServerWarnings(res.warnings);
     setPublished(res.version.version);
     toast.success(`Published ${res.version.version}`, { description: 'The version is frozen. Deploy it when you are ready.' });
   };
@@ -80,9 +92,19 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
         <div className="flex gap-3">
           <CircleCheckIcon className="mt-0.5 h-5 w-5 shrink-0 text-success" aria-hidden />
           <p className="text-sm leading-relaxed text-ink-soft">
-            It’s frozen and can’t change. Your draft has moved on to <span className="font-mono text-ink">{bumpVersion(published, 'patch')}</span>, so you can keep editing safely. Nothing is live until you deploy.
+            It’s frozen and can’t change. Keep editing the draft safely; that doesn’t touch this version. Nothing is live until you deploy.
           </p>
         </div>
+        {serverWarnings.length > 0 &&
+        <ul className="mt-4 space-y-1.5">
+            {serverWarnings.map((w, i) =>
+          <li key={i} className="flex items-start gap-2 text-[13px] text-ink-soft">
+                <TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+                {w.message}
+              </li>
+          )}
+          </ul>
+        }
       </Dialog>);
 
   }
@@ -102,8 +124,8 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
       report.valid ?
       <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" onClick={handlePublish}>
-              Publish {bumpVersion(latest?.version, bump)}
+            <Button variant="primary" onClick={handlePublish} disabled={publishing}>
+              {publishing ? <><LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />Publishing…</> : <>Publish {bumpVersion(latest?.version, bump)}</>}
             </Button>
           </> :
 
@@ -137,6 +159,19 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
         </ul> :
 
       <div className="space-y-6">
+          {serverErrors &&
+        <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-3">
+              <p className="text-sm font-medium text-danger">The server did not publish this draft</p>
+              <ul className="mt-1.5 space-y-1">
+                {serverErrors.map((e, i) =>
+            <li key={i} className="text-[13px] text-ink-soft">
+                    {e.path && <span className="font-medium text-ink">{describePath(e.path, editor.config!)}: </span>}
+                    {e.message}
+                  </li>
+            )}
+              </ul>
+            </div>
+        }
           <fieldset>
             <legend className="text-sm font-medium text-ink">What kind of change is this?</legend>
             <div role="radiogroup" className="mt-2 grid gap-2 sm:grid-cols-3">

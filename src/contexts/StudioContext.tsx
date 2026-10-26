@@ -16,10 +16,10 @@ import { starters } from '../data/starters';
 import { useAuth } from './AuthContext';
 import { buildConfig, normalizeConfig } from '../utils/configFactory';
 import { validateConfig } from '../utils/validate';
-import { bumpVersion, randomHex } from '../utils/format';
+import { randomHex } from '../utils/format';
 import { currentDeployments } from '../utils/agentStatus';
 import { api, ApiError } from '../api/client';
-import type { BotSummary } from '../api/types';
+import type { BotSummary, Preflight, ValidationIssue } from '../api/types';
 
 export type SaveResult =
   | { ok: true; draft: Draft }
@@ -28,6 +28,17 @@ export type SaveResult =
 export type PublishResult =
   | { ok: true; version: Version; warnings: Issue[]; secrets_required: string[] }
   | { ok: false; errors: Issue[] };
+
+export interface DeployOutcome {
+  deployment: Deployment;
+  /** What the server checked for this version: missing secrets, features it cannot run, knowledge problems. */
+  preflight: Preflight;
+}
+
+const toIssue = (issue: ValidationIssue): Issue => ({
+  path: issue.path ? issue.path.map(String) : null,
+  message: issue.message,
+});
 
 interface CreateInput {
   id: string;
@@ -60,10 +71,11 @@ interface StudioValue {
   getAgent: (id: string) => Agent | undefined;
   createAgent: (input: CreateInput) => Promise<Agent> | Agent;
   saveDraft: (agentId: string, config: AgentConfig, baseRevision: number | null) => Promise<SaveResult>;
-  publish: (agentId: string, bump: VersionBump) => PublishResult;
-  deploy: (agentId: string, version: string, env: EnvironmentName, note: string) => Deployment;
-  rollback: (agentId: string, env: EnvironmentName) => Deployment | null;
-  restoreVersion: (agentId: string, version: string) => void;
+  publish: (agentId: string, bump: VersionBump) => Promise<PublishResult>;
+  deploy: (agentId: string, version: string, env: EnvironmentName, note: string) => Promise<DeployOutcome>;
+  rollback: (agentId: string, env: EnvironmentName) => Promise<DeployOutcome | null>;
+  /** Saves a version's config as the draft (with the revision check). Throws with the server's reason on failure. */
+  restoreVersion: (agentId: string, version: string) => Promise<void>;
   /** A version's config from the server (cached on the agent once loaded). */
   loadVersionConfig: (agentId: string, version: string) => Promise<AgentConfig>;
   refreshAgents: () => Promise<void>;
@@ -441,129 +453,82 @@ export function StudioProvider({ children }: StudioProviderProps) {
     [updateAgent, log]
   );
 
+  // Publishes the saved draft and reports what the server froze. Nothing is shown before the server answers.
   const publish = useCallback(
-    (agentId: string, bump: VersionBump): PublishResult => {
+    async (agentId: string, bump: VersionBump): Promise<PublishResult> => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) throw new Error(`Unknown agent ${agentId}`);
 
       const report = validateConfig(agent.draft.config);
       if (!report.valid) return { ok: false, errors: report.errors };
 
-      const versionNumber = bumpVersion(agent.versions[0]?.version, bump);
-      const config = { ...agent.draft.config, meta: { ...agent.draft.config.meta, version: versionNumber } };
-      const version: Version = {
-        version: versionNumber,
-        published_at: new Date().toISOString(),
-        published_by: who,
-        checksum: `sha256_${randomHex(16)}`,
-        config,
-      };
-
-      // Optimistic update
-      updateAgent(agentId, (a) => ({
-        ...a,
-        versions: [version, ...a.versions],
-      }));
-
-      // Call real server publish endpoint
-      api.publish(agentId, bump)
-        .then((res) => {
-          updateAgent(agentId, (a) => ({
-            ...a,
-            versions: [
-              {
-                version: res.version,
-                published_at: res.published_at,
-                published_by: res.published_by || who,
-                checksum: res.checksum,
-                config,
-              },
-              ...a.versions.filter((v) => v.version !== versionNumber),
-            ],
-          }));
-          log('published', agentId, `Published ${res.version}`);
-          addNotification({
-            title: `Version ${res.version} Published`,
-            description: `Version ${res.version} for ${agent.name} is ready to deploy.`,
-            type: 'deploy',
-            status: 'success',
-            link: `/agents/${agentId}/release`,
-          });
-        })
-        .catch(() => {
-          // If server rejects, refresh agent
-          refreshAgent(agentId);
+      try {
+        const res = await api.publish(agentId, bump);
+        await refreshAgent(agentId);
+        log('published', agentId, `Published ${res.version}`);
+        addNotification({
+          title: `Version ${res.version} Published`,
+          description: `Version ${res.version} for ${agent.name} is ready to deploy.`,
+          type: 'deploy',
+          status: 'success',
+          link: `/agents/${agentId}/release`,
         });
-
-      return { ok: true, version, warnings: report.warnings, secrets_required: report.secrets_required };
+        return {
+          ok: true,
+          version: { version: res.version, published_at: res.published_at, published_by: res.published_by, checksum: res.checksum },
+          warnings: (res.warnings ?? []).map(toIssue),
+          secrets_required: res.secrets_required ?? [],
+        };
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.kind === 'invalid' && err.errors.length) return { ok: false, errors: err.errors.map(toIssue) };
+        return { ok: false, errors: [{ path: null, message: err instanceof Error ? err.message : 'The server did not publish this draft.' }] };
+      }
     },
-    [updateAgent, log, who, addNotification, refreshAgent]
+    [refreshAgent, log, addNotification]
   );
 
+  // Points an environment at a version. Resolves with the deployment once it is active or failed (the API may answer
+  // "pending" first and finish later; then this polls GET /deployments/{id}), plus the server's preflight report.
   const deploy = useCallback(
-    (agentId: string, version: string, env: EnvironmentName, note: string): Deployment => {
+    async (agentId: string, version: string, env: EnvironmentName, note: string): Promise<DeployOutcome> => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) throw new Error(`Unknown agent ${agentId}`);
-      const current = currentDeployments(agent)[env];
 
-      const dep: Deployment = {
-        id: `dep_${randomHex(6)}`,
-        status: 'pending',
-        environment: env,
-        version,
-        previous_version: current?.version ?? null,
-        deployed_at: new Date().toISOString(),
-        deployed_by: who,
-        note,
+      const res = await api.deploy(agentId, { version, environment: env, note });
+      let dep = res.deployment;
+      for (let tries = 0; dep.status === 'pending' && tries < 120; tries++) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        dep = await api.getDeployment(agentId, dep.id);
+      }
+      await refreshAgent(agentId);
+
+      const deployment: Deployment = {
+        id: dep.id,
+        status: dep.status,
+        environment: dep.environment as EnvironmentName,
+        version: dep.version,
+        previous_version: dep.previous_version,
+        deployed_at: dep.deployed_at,
+        deployed_by: dep.deployed_by,
+        note: dep.note || '',
       };
-
-      // Optimistic update
-      updateAgent(agentId, (a) => ({ ...a, deployments: [dep, ...a.deployments] }));
-
-      // Send to real API
-      api.deploy(agentId, { version, environment: env, note })
-        .then((res) => {
-          const realDep = res.deployment;
-          updateAgent(agentId, (a) => ({
-            ...a,
-            deployments: [
-              {
-                id: realDep.id,
-                status: realDep.status as any,
-                environment: realDep.environment as EnvironmentName,
-                version: realDep.version,
-                previous_version: realDep.previous_version,
-                deployed_at: realDep.deployed_at,
-                deployed_by: realDep.deployed_by || who,
-                note: realDep.note || note,
-              },
-              ...a.deployments.filter((d) => d.id !== dep.id),
-            ],
-          }));
-
-          addNotification({
-            title: `Deployment Active · ${env.charAt(0).toUpperCase() + env.slice(1)}`,
-            description: `${version} for ${agent.name} is now live.`,
-            type: 'deploy',
-            status: 'success',
-            link: `/agents/${agentId}/release`,
-          });
-          log('deployed', agentId, `Deployed ${version} to ${env}`);
-        })
-        .catch(() => {
-          updateAgent(agentId, (a) => ({
-            ...a,
-            deployments: a.deployments.map((d) => (d.id === dep.id ? { ...d, status: 'failed' } : d)),
-          }));
+      if (deployment.status === 'active') {
+        addNotification({
+          title: `Deployment Active · ${env.charAt(0).toUpperCase() + env.slice(1)}`,
+          description: `${version} for ${agent.name} is now live.`,
+          type: 'deploy',
+          status: 'success',
+          link: `/agents/${agentId}/release`,
         });
-
-      return dep;
+        log('deployed', agentId, `Deployed ${version} to ${env}`);
+      }
+      return { deployment, preflight: res.preflight };
     },
-    [updateAgent, log, who, addNotification]
+    [refreshAgent, log, addNotification]
   );
 
   const rollback = useCallback(
-    (agentId: string, env: EnvironmentName): Deployment | null => {
+    async (agentId: string, env: EnvironmentName): Promise<DeployOutcome | null> => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       const current = agent ? currentDeployments(agent)[env] : undefined;
       if (!current?.previous_version) return null;
@@ -594,19 +559,15 @@ export function StudioProvider({ children }: StudioProviderProps) {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) return;
 
-      try {
-        const v = await api.getVersion(agentId, version);
-        const config = (v.config as AgentConfig) || agent.versions.find((x) => x.version === version)?.config;
-        if (!config) return;
-
-        await api.saveDraft(agentId, config, null);
-        await refreshAgent(agentId);
-        log('restored', agentId, `Restored ${version} as the draft`);
-      } catch (err: any) {
-        log('restored', agentId, `Failed to restore ${version}: ${err?.message}`);
+      const config = await loadVersionConfig(agentId, version);
+      const res = await saveDraft(agentId, config, agent.draft.revision);
+      if (!res.ok) {
+        throw new Error(`${res.conflict.saved_by || 'Someone'} saved the draft at ${res.conflict.saved_at} while you were choosing. Nothing was restored.`);
       }
+      await refreshAgent(agentId);
+      log('restored', agentId, `Restored ${version} as the draft`);
     },
-    [refreshAgent, log]
+    [loadVersionConfig, saveDraft, refreshAgent, log]
   );
 
   const value = useMemo(
