@@ -32,9 +32,9 @@ export function AgentWorkspace() {
     [agentId, navigate]
   );
 
-  const openPublish = useCallback(() => {
-    editor.flush();
-    setPublishOpen(true);
+  // Publish freezes the saved draft, so open it only once the server has the latest edits.
+  const openPublish = useCallback(async () => {
+    if (await editor.flush()) setPublishOpen(true);
   }, [editor]);
 
   if (!editor.agent || !editor.config || !editor.validation) {

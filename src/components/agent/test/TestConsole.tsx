@@ -14,7 +14,8 @@ interface TestConsoleProps {
   session: TestSession;
   config: AgentConfig;
   revision: number;
-  onBeforeStart: () => void;
+  /** Saves pending edits; resolves false if the draft could not be saved. */
+  onBeforeStart: () => Promise<boolean>;
   hasUnsaved: boolean;
 }
 
@@ -31,8 +32,9 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages.length, typing]);
 
-  const start = () => {
-    onBeforeStart();
+  // The session runs the saved draft, so start only once the server has the latest edits.
+  const start = async () => {
+    if (!(await onBeforeStart())) return;
     session.start(selected);
   };
 

@@ -15,11 +15,12 @@ interface ImportExportModalProps {
   onClose: () => void;
   agent: Agent;
   currentConfig: AgentConfig;
-  onConfigImported?: (newConfig: AgentConfig) => void;
+  /** Puts the imported config in the editor as one undoable change; it is saved like any other edit. */
+  onConfigImported: (newConfig: AgentConfig) => void;
 }
 
 export function ImportExportModal({ open, onClose, agent, currentConfig, onConfigImported }: ImportExportModalProps) {
-  const { logAudit, importDraft } = useStudio();
+  const { logAudit } = useStudio();
   const { can } = useAuth();
   const [tab, setTab] = useState<'export' | 'import'>('export');
   const [importJson, setImportJson] = useState('');
@@ -89,12 +90,9 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
     if (!check.ok) return;
 
     const imported = check.value as AgentConfig;
-    importDraft(agent.id, imported);
-    if (onConfigImported) {
-      onConfigImported(imported);
-    }
+    onConfigImported(imported);
     toast.success(`Imported configuration for ${agent.name}`, {
-      description: 'Your working draft has been updated with validated JSON.',
+      description: 'The draft now holds the imported JSON. It saves in a moment; Undo puts back what was there.',
     });
     onClose();
   };

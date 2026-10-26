@@ -159,6 +159,17 @@ function SaveIndicator({ editor }: {editor: DraftEditor;}) {
       </span>);
 
   }
+  if (editor.status === 'error') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-danger" title={editor.saveError ?? undefined}>
+        <CircleAlertIcon className="h-3.5 w-3.5" aria-hidden />
+        Not saved: {editor.saveError}
+        <button type="button" onClick={editor.retrySave} className="font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded">
+          Try again
+        </button>
+      </span>);
+
+  }
   return (
     <span className="inline-flex items-center gap-1.5">
       <CircleCheckIcon className="h-3.5 w-3.5 text-success" aria-hidden />

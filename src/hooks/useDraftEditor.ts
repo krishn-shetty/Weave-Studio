@@ -5,8 +5,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { validateConfig } from '../utils/validate';
 import { normalizeConfig } from '../utils/configFactory';
 import { setAt } from '../utils/path';
+import { api } from '../api/client';
 
-export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'conflict';
+export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error';
+
+/** How often the editor asks the server whether someone else saved a newer draft. */
+const REMOTE_CHECK_MS = 15_000;
 
 export function useDraftEditor(agentId: string) {
   const { getAgent, saveDraft } = useStudio();
@@ -19,6 +23,9 @@ export function useDraftEditor(agentId: string) {
   const [savedAt, setSavedAt] = useState(agent?.draft.saved_at ?? '');
   const [status, setStatus] = useState<SaveStatus>('saved');
   const [conflict, setConflict] = useState<Draft | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // A newer draft someone else saved, found by checking the server (not by saving).
+  const [remoteDraft, setRemoteDraft] = useState<Draft | null>(null);
   const [validation, setValidation] = useState<ValidationReport | null>(() => config ? validateConfig(config) : null);
   const [validating, setValidating] = useState(false);
 
@@ -38,6 +45,8 @@ export function useDraftEditor(agentId: string) {
     setSavedAt(a.draft.saved_at);
     setStatus('saved');
     setConflict(null);
+    setSaveError(null);
+    setRemoteDraft(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agentId]);
 
@@ -64,43 +73,94 @@ export function useDraftEditor(agentId: string) {
     return () => window.clearTimeout(t);
   }, [config]);
 
-  const performSave = useCallback(
-    (overwrite = false) => {
+  // Resolves true when the server saved the draft. Edits made while the request was in flight stay unsaved.
+  // Saves run one at a time, so each one sends the revision the previous one got back.
+  const queueRef = useRef<Promise<unknown>>(Promise.resolve());
+  const saveNow = useCallback(
+    async (overwrite: boolean): Promise<boolean> => {
       const current = configRef.current;
-      if (!current) return;
-      const res = saveDraft(agentId, current, overwrite ? null : baseRef.current);
-      if (res.ok) {
-        baseRef.current = res.draft.revision;
-        statusRef.current = configRef.current === current ? 'saved' : 'unsaved';
-        setBaseRevision(res.draft.revision);
-        setSavedAt(res.draft.saved_at);
-        setConflict(null);
-        setStatus(statusRef.current);
-      } else {
+      if (!current) return false;
+      if (!overwrite && statusRef.current === 'saved') return true;
+      statusRef.current = 'saving';
+      setStatus('saving');
+      try {
+        const res = await saveDraft(agentId, current, overwrite ? null : baseRef.current);
+        if (res.ok) {
+          baseRef.current = res.draft.revision;
+          statusRef.current = configRef.current === current ? 'saved' : 'unsaved';
+          setBaseRevision(res.draft.revision);
+          setSavedAt(res.draft.saved_at);
+          setConflict(null);
+          setSaveError(null);
+          setRemoteDraft(null);
+          setStatus(statusRef.current);
+          return true;
+        }
         statusRef.current = 'conflict';
         setConflict(res.conflict);
         setStatus('conflict');
+        return false;
+      } catch (err: unknown) {
+        statusRef.current = 'error';
+        setSaveError(err instanceof Error ? err.message : 'The draft could not be saved.');
+        setStatus('error');
+        return false;
       }
     },
     [agentId, saveDraft]
   );
+  const performSave = useCallback(
+    (overwrite = false): Promise<boolean> => {
+      const run = queueRef.current.then(() => saveNow(overwrite));
+      queueRef.current = run.catch(() => undefined);
+      return run;
+    },
+    [saveNow]
+  );
   const performSaveRef = useRef(performSave);
   performSaveRef.current = performSave;
 
-  // Autosave.
+  // Autosave about a second after typing stops.
   useEffect(() => {
     if (status !== 'unsaved' || !canEdit) return;
-    const t = window.setTimeout(() => {
-      setStatus('saving');
-      window.setTimeout(() => performSaveRef.current(), 350);
-    }, 900);
+    const t = window.setTimeout(() => void performSaveRef.current(), 1000);
     return () => window.clearTimeout(t);
   }, [config, status, canEdit]);
+
+  // Has someone else saved a newer draft? Checked every 15 s while the tab is visible and on returning to it.
+  useEffect(() => {
+    let controller: AbortController | null = null;
+    const check = () => {
+      if (document.visibilityState !== 'visible' || statusRef.current === 'saving') return;
+      controller?.abort();
+      controller = new AbortController();
+      api
+        .getDraft(agentId, { signal: controller.signal })
+        .then((latest) => {
+          if (statusRef.current === 'saving' || latest.revision <= baseRef.current) return;
+          setRemoteDraft({
+            bot_id: agentId,
+            revision: latest.revision,
+            saved_at: latest.saved_at,
+            saved_by: latest.saved_by,
+            config: latest.config as AgentConfig,
+          });
+        })
+        .catch(() => undefined); // the health indicator reports an unreachable API
+    };
+    const interval = window.setInterval(check, REMOTE_CHECK_MS);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      controller?.abort();
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [agentId]);
 
   // Warn before leaving with unsaved changes.
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (statusRef.current === 'unsaved' || statusRef.current === 'saving' || statusRef.current === 'conflict') {
+      if (statusRef.current !== 'saved') {
         e.preventDefault();
         e.returnValue = '';
       }
@@ -112,7 +172,7 @@ export function useDraftEditor(agentId: string) {
   // Flush on unmount so in-app navigation never loses edits.
   useEffect(
     () => () => {
-      if (statusRef.current === 'unsaved' || statusRef.current === 'saving') performSaveRef.current();
+      if (statusRef.current === 'unsaved' || statusRef.current === 'error') void performSaveRef.current();
     },
     []
   );
@@ -171,7 +231,7 @@ export function useDraftEditor(agentId: string) {
         setFuture([]);
         return setAt(prev, path, value);
       });
-      setStatus((s) => s === 'conflict' ? s : 'unsaved');
+      setStatus((s) => (s === 'conflict' ? s : 'unsaved'));
     },
     [canEdit]
   );
@@ -191,22 +251,46 @@ export function useDraftEditor(agentId: string) {
     [canEdit]
   );
 
-  const flush = useCallback(() => {
-    if (statusRef.current === 'unsaved' || statusRef.current === 'saving') performSaveRef.current();
+  /** Saves pending edits now. Resolves true when the server has everything (nothing pending, or the save worked). */
+  const flush = useCallback(async (): Promise<boolean> => {
+    if (statusRef.current === 'saved') return true;
+    if (statusRef.current === 'conflict') return false;
+    return performSaveRef.current();
   }, []);
+
+  const retrySave = useCallback(() => void performSaveRef.current(), []);
+
+  /** Replace the editor contents with the newer draft found on the server. */
+  const loadRemoteDraft = useCallback(() => {
+    if (!remoteDraft) return;
+    setConfig(normalizeConfig(remoteDraft.config));
+    baseRef.current = remoteDraft.revision;
+    statusRef.current = 'saved';
+    setBaseRevision(remoteDraft.revision);
+    setSavedAt(remoteDraft.saved_at);
+    setRemoteDraft(null);
+    setConflict(null);
+    setSaveError(null);
+    setStatus('saved');
+  }, [remoteDraft]);
+
+  /** Keep the editor contents and save them over the newer server draft. */
+  const overwriteRemoteDraft = useCallback(() => void performSaveRef.current(true), []);
 
   const resolveConflict = useCallback(
     (choice: 'mine' | 'theirs') => {
       if (!conflict) return;
       if (choice === 'mine') {
-        performSaveRef.current(true);
+        void performSaveRef.current(true);
         return;
       }
-      setConfig(conflict.config);
+      setConfig(normalizeConfig(conflict.config));
       baseRef.current = conflict.revision;
+      statusRef.current = 'saved';
       setBaseRevision(conflict.revision);
       setSavedAt(conflict.saved_at);
       setConflict(null);
+      setRemoteDraft(null);
       setStatus('saved');
     },
     [conflict]
@@ -220,6 +304,8 @@ export function useDraftEditor(agentId: string) {
     status,
     savedAt,
     conflict,
+    saveError,
+    remoteDraft,
     canEdit,
     baseRevision,
     canUndo: history.length > 0,
@@ -229,6 +315,9 @@ export function useDraftEditor(agentId: string) {
     update,
     replaceConfig,
     flush,
+    retrySave,
+    loadRemoteDraft,
+    overwriteRemoteDraft,
     resolveConflict
   };
 }

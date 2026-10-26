@@ -59,9 +59,7 @@ interface StudioValue {
   logAudit: (action: ActivityAction, agentId: string, detail: string) => void;
   getAgent: (id: string) => Agent | undefined;
   createAgent: (input: CreateInput) => Promise<Agent> | Agent;
-  saveDraft: (agentId: string, config: AgentConfig, baseRevision: number | null) => SaveResult;
-  saveDraftAsync: (agentId: string, config: AgentConfig, baseRevision: number | null) => Promise<SaveResult>;
-  importDraft: (agentId: string, config: AgentConfig) => SaveResult;
+  saveDraft: (agentId: string, config: AgentConfig, baseRevision: number | null) => Promise<SaveResult>;
   publish: (agentId: string, bump: VersionBump) => PublishResult;
   deploy: (agentId: string, version: string, env: EnvironmentName, note: string) => Deployment;
   rollback: (agentId: string, env: EnvironmentName) => Deployment | null;
@@ -378,9 +376,9 @@ export function StudioProvider({ children }: StudioProviderProps) {
         starter: starter.id,
         draft: {
           bot_id: id,
-          revision: saveRes.draft.revision || 1,
-          saved_at: saveRes.draft.saved_at || new Date().toISOString(),
-          saved_by: who,
+          revision: saveRes.draft.revision,
+          saved_at: saveRes.draft.saved_at,
+          saved_by: saveRes.draft.saved_by,
           config: initialConfig,
         },
         versions: [],
@@ -391,10 +389,12 @@ export function StudioProvider({ children }: StudioProviderProps) {
       log('created', id, `Created from ${starter.name} starter`);
       return agent;
     },
-    [commit, log, who]
+    [commit, log]
   );
 
-  const saveDraftAsync = useCallback(
+  // Saves to the server and reports what the server said: the new revision, or a conflict with the draft someone else
+  // saved first. Never invents a revision, and never overwrites the caller's edits.
+  const saveDraft = useCallback(
     async (agentId: string, config: AgentConfig, baseRevision: number | null): Promise<SaveResult> => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
       if (!agent) throw new Error(`Unknown agent ${agentId}`);
@@ -405,10 +405,9 @@ export function StudioProvider({ children }: StudioProviderProps) {
           bot_id: agentId,
           revision: res.draft.revision,
           saved_at: res.draft.saved_at,
-          saved_by: res.draft.saved_by || who,
+          saved_by: res.draft.saved_by,
           config: (res.draft.config as AgentConfig) || config,
         };
-
         updateAgent(agentId, (a) => ({
           ...a,
           name: config.meta?.name?.trim() || a.name,
@@ -416,16 +415,15 @@ export function StudioProvider({ children }: StudioProviderProps) {
         }));
         log('saved', agentId, `Saved draft revision ${draft.revision}`);
         return { ok: true, draft };
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (err instanceof ApiError && err.kind === 'conflict') {
-          // Fetch real current draft from server to provide conflict resolution
-          const currentOnServer = await api.getDraft(agentId);
+          const latest = await api.getDraft(agentId);
           const serverDraft: Draft = {
             bot_id: agentId,
-            revision: currentOnServer.revision,
-            saved_at: currentOnServer.saved_at,
-            saved_by: currentOnServer.saved_by,
-            config: currentOnServer.config as AgentConfig,
+            revision: latest.revision,
+            saved_at: latest.saved_at,
+            saved_by: latest.saved_by,
+            config: latest.config as AgentConfig,
           };
           updateAgent(agentId, (a) => ({ ...a, draft: serverDraft }));
           return { ok: false, conflict: serverDraft };
@@ -433,72 +431,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
         throw err;
       }
     },
-    [updateAgent, log, who]
-  );
-
-  const saveDraft = useCallback(
-    (agentId: string, config: AgentConfig, baseRevision: number | null): SaveResult => {
-      const agent = agentsRef.current.find((a) => a.id === agentId);
-      if (!agent) throw new Error(`Unknown agent ${agentId}`);
-
-      const now = new Date().toISOString();
-      const optimisticDraft: Draft = {
-        bot_id: agentId,
-        revision: (baseRevision || agent.draft.revision) + 1,
-        saved_at: now,
-        saved_by: who,
-        config,
-      };
-
-      // Apply optimistic update immediately
-      updateAgent(agentId, (a) => ({
-        ...a,
-        name: config.meta?.name?.trim() || a.name,
-        draft: optimisticDraft,
-      }));
-
-      // Send to server in background
-      api.saveDraft(agentId, config, baseRevision)
-        .then((res) => {
-          updateAgent(agentId, (a) => ({
-            ...a,
-            draft: {
-              bot_id: agentId,
-              revision: res.draft.revision,
-              saved_at: res.draft.saved_at,
-              saved_by: res.draft.saved_by || who,
-              config: (res.draft.config as AgentConfig) || config,
-            },
-          }));
-          log('saved', agentId, `Saved draft revision ${res.draft.revision}`);
-        })
-        .catch((err) => {
-          if (err instanceof ApiError && err.kind === 'conflict') {
-            api.getDraft(agentId).then((latest) => {
-              updateAgent(agentId, (a) => ({
-                ...a,
-                draft: {
-                  bot_id: agentId,
-                  revision: latest.revision,
-                  saved_at: latest.saved_at,
-                  saved_by: latest.saved_by,
-                  config: latest.config as AgentConfig,
-                },
-              }));
-            });
-          }
-        });
-
-      return { ok: true, draft: optimisticDraft };
-    },
-    [updateAgent, log, who]
-  );
-
-  const importDraft = useCallback(
-    (agentId: string, config: AgentConfig): SaveResult => {
-      return saveDraft(agentId, config, null);
-    },
-    [saveDraft]
+    [updateAgent, log]
   );
 
   const publish = useCallback(
@@ -677,8 +610,6 @@ export function StudioProvider({ children }: StudioProviderProps) {
       getAgent,
       createAgent,
       saveDraft,
-      saveDraftAsync,
-      importDraft,
       publish,
       deploy,
       rollback,
@@ -708,8 +639,6 @@ export function StudioProvider({ children }: StudioProviderProps) {
       getAgent,
       createAgent,
       saveDraft,
-      saveDraftAsync,
-      importDraft,
       publish,
       deploy,
       rollback,

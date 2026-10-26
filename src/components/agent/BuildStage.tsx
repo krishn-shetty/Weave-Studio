@@ -52,7 +52,6 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
   const view = (views.some((v) => v.value === params.get('view')) ? params.get('view') : 'guided') as EditorView;
   const [detailedGroup, setDetailedGroup] = useState<SettingGroupId | null>(null);
   const [importExportOpen, setImportExportOpen] = useState(false);
-  const [conflictOpen, setConflictOpen] = useState(false);
 
   const setView = useCallback(
     (v: EditorView) => {
@@ -84,10 +83,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
-      <ConcurrentEditBanner
-        editor={editor}
-        onOpenConflict={() => setConflictOpen(true)}
-      />
+      <ConcurrentEditBanner editor={editor} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
