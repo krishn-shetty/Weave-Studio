@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       target,
       changeOrigin: true,
       rewrite: (path: string) => path.replace(/^\/api/, ''),
-      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       configure: (proxy: any) => {
         proxy.on('proxyReq', (proxyReq: any) => {
           proxyReq.removeHeader('x-user')

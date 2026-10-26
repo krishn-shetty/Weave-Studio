@@ -258,9 +258,10 @@ AGENT_BUILDER_USER=admin@enterprise.internal
    ```
    The application will be served at `http://localhost:5173`. Vite automatically proxies `/api` calls to the configured `AGENT_BUILDER_URL`.
 
-3. **Verify type safety**:
+3. **Verify type safety and run the unit tests**:
    ```bash
-   npx tsc --noEmit
+   npm run typecheck
+   npm test
    ```
 
 4. **Verify compliance rules**:
@@ -333,8 +334,14 @@ Weave Studio connects to the Agent Builder API through a typed client layer. The
 Weave Studio maintains code quality through continuous verification:
 
 ```bash
-# Run TypeScript type verification across all components
-npx tsc --noEmit
+# Everything below in one go (lint, typecheck, test, build, check:no-fake)
+npm run check
+
+# Run TypeScript type verification (app and Vite config)
+npm run typecheck
+
+# Run the unit tests (Vitest)
+npm test
 
 # Run ESLint across JavaScript, TypeScript, and JSX
 npm run lint
