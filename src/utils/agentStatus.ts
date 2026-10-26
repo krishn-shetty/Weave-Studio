@@ -1,5 +1,5 @@
 import type { Agent, Deployment, EnvironmentName, Version } from '../types/studio';
-import { diffConfigs, meaningfulChanges } from './diff';
+import { changesSince } from '../models/changes';
 
 export const environments: EnvironmentName[] = ['development', 'staging', 'production'];
 
@@ -29,5 +29,5 @@ export function draftChangeCount(agent: Agent): number | null {
   const latest = latestVersion(agent);
   if (!latest) return 0;
   if (!latest.config || agent.loadError) return null;
-  return meaningfulChanges(diffConfigs(latest.config, agent.draft.config)).length;
+  return changesSince(latest.config, agent.draft.config).total;
 }

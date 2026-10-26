@@ -4,11 +4,12 @@ import { Dialog } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { ChangeList } from './ChangeList';
 import { diffConfigs } from '../../utils/diff';
+import { plainChanges } from '../../models/changes';
 import { formatClock } from '../../utils/format';
 
 export function ConflictDialog({ editor }: {editor: DraftEditor;}) {
   const { conflict, config } = editor;
-  const changes = useMemo(() => conflict && config ? diffConfigs(conflict.config, config) : [], [conflict, config]);
+  const changes = useMemo(() => plainChanges(conflict && config ? diffConfigs(conflict.config, config) : []), [conflict, config]);
 
   return (
     <Dialog
@@ -35,9 +36,9 @@ export function ConflictDialog({ editor }: {editor: DraftEditor;}) {
       }>
       
       <p className="mb-4 text-sm text-ink-soft">
-        Red is in their saved version, green is in yours. Keeping yours replaces their changes; using theirs discards yours.
+        What your edits change compared with what they saved. Keeping yours replaces their changes; using theirs discards yours.
       </p>
-      <ChangeList changes={changes} emptyText="Your edits match what they saved." />
+      <ChangeList summary={changes} emptyText="Your edits match what they saved." />
     </Dialog>);
 
 }

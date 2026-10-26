@@ -3,9 +3,10 @@ import { ArrowRightIcon } from 'lucide-react';
 import type { Agent } from '../../../types/studio';
 import { Dialog } from '../../ui/Dialog';
 import { ChangeList } from '../ChangeList';
-import { diffConfigs, groupChanges, meaningfulChanges } from '../../../utils/diff';
+import { plainChanges } from '../../../models/changes';
+import { api } from '../../../api/client';
+import type { Diff } from '../../../api/types';
 import { inputClass } from '../../../utils/styles';
-import { useVersionConfig } from '../../../hooks/useVersionConfig';
 
 interface CompareDialogProps {
   open: boolean;
@@ -15,9 +16,12 @@ interface CompareDialogProps {
   initialB: string;
 }
 
+/** Any two versions, or a version and the saved draft, compared by the server (GET /diff), in plain words. */
 export function CompareDialog({ open, onClose, agent, initialA, initialB }: CompareDialogProps) {
   const [a, setA] = useState(initialA);
   const [b, setB] = useState(initialB);
+  const [diff, setDiff] = useState<Diff | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -26,42 +30,53 @@ export function CompareDialog({ open, onClose, agent, initialA, initialB }: Comp
     }
   }, [open, initialA, initialB]);
 
-  const from = useVersionConfig(agent, a);
-  const to = useVersionConfig(agent, b);
-  const ready = !!from.config && !!to.config;
-  const changes = useMemo(() => (from.config && to.config ? meaningfulChanges(diffConfigs(from.config, to.config)) : []), [from.config, to.config]);
-  const sections = groupChanges(changes).length;
-  const loadError = from.error ?? to.error;
-  const options = [{ value: 'draft', label: `Draft (rev ${agent.draft.revision})` }, ...agent.versions.map((v) => ({ value: v.version, label: v.version }))];
+  useEffect(() => {
+    if (!open || !a || !b) return;
+    const controller = new AbortController();
+    setDiff(null);
+    setError(null);
+    api
+      .diff(agent.id, a, b, { signal: controller.signal })
+      .then(setDiff)
+      .catch((err: unknown) => {
+        if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'The server could not compare them.');
+      });
+    return () => controller.abort();
+  }, [open, agent.id, a, b]);
+
+  const summary = useMemo(() => plainChanges(diff?.changes ?? []), [diff]);
+  const options = [{ value: 'draft', label: `Saved draft (rev ${agent.draft.revision})` }, ...agent.versions.map((v) => ({ value: v.version, label: v.version }))];
+  const description = error ? 'The server could not compare them.' : diff ? `${summary.total} ${summary.total === 1 ? 'change' : 'changes'} in ${summary.groups.length} ${summary.groups.length === 1 ? 'part' : 'parts'}` : 'Asking the server…';
 
   return (
-    <Dialog open={open} onClose={onClose} size="xl" title="Compare" description={ready ? `${changes.length} ${changes.length === 1 ? 'change' : 'changes'} in ${sections} ${sections === 1 ? 'section' : 'sections'}` : loadError ? 'A version could not be loaded.' : 'Loading the versions…'}>
+    <Dialog open={open} onClose={onClose} size="xl" title="Compare" description={description}>
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <label className="block">
           <span className="text-[13px] font-medium text-ink-soft">From</span>
-          <select className={`${inputClass} mt-1 w-48 font-mono`} value={a} onChange={(e) => setA(e.target.value)}>
+          <select className={`${inputClass} mt-1 w-56 font-mono`} value={a} onChange={(e) => setA(e.target.value)}>
             {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
         <ArrowRightIcon className="mb-2.5 h-4 w-4 text-muted" aria-hidden />
         <label className="block">
           <span className="text-[13px] font-medium text-ink-soft">To</span>
-          <select className={`${inputClass} mt-1 w-48 font-mono`} value={b} onChange={(e) => setB(e.target.value)}>
+          <select className={`${inputClass} mt-1 w-56 font-mono`} value={b} onChange={(e) => setB(e.target.value)}>
             {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
       </div>
-      {loadError ? (
-        <p className="text-sm text-danger" role="alert">{loadError}</p>
-      ) : ready ? (
-        <ChangeList changes={changes} emptyText="These two are identical." />
-      ) : (
-        <div className="space-y-2" aria-busy="true" aria-label="Loading">
+      <p className="mb-4 text-xs text-muted">The draft here is what is saved on the server; unsaved edits are not included.</p>
+      {error ?
+      <p className="text-sm text-danger" role="alert">{error}</p> :
+      diff ?
+      <ChangeList summary={summary} emptyText="These two are the same (apart from version numbers and dates)." /> :
+
+      <div className="space-y-2" aria-busy="true" aria-label="Loading">
           <div className="h-4 w-2/3 animate-pulse rounded bg-subtle" />
           <div className="h-4 w-1/2 animate-pulse rounded bg-subtle" />
           <div className="h-4 w-3/5 animate-pulse rounded bg-subtle" />
         </div>
-      )}
+      }
     </Dialog>);
 
 }

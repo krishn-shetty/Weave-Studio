@@ -13,6 +13,8 @@ import { draftChangeCount, latestVersion } from '../../utils/agentStatus';
 import { missingSecrets } from '../../utils/providerOptions';
 import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
+import { ChangeList } from './ChangeList';
+import { useChangesSincePublished } from '../../hooks/usePublishedChanges';
 
 interface PublishDialogProps {
   open: boolean;
@@ -57,6 +59,8 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
   const keys = useSecretKeys();
   const missing = useMemo(() => report ? missingSecrets(report.secrets_required, keys) : [], [report, keys]);
   const changes = agent ? draftChangeCount(agent) : 0;
+  // What this version will change, in the same words as the header's list; shown first.
+  const sincePublished = useChangesSincePublished(editor);
   if (!agent || !editor.config) return null;
 
   const handlePublish = async () => {
@@ -164,6 +168,16 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
         </p>
       }
       <div className="space-y-6">
+          {latest &&
+        <section aria-labelledby="publish-changes">
+              <h3 id="publish-changes" className="text-sm font-medium text-ink">What changes since {latest.version}</h3>
+              <div className="mt-2 max-h-72 overflow-y-auto pr-1">
+                {sincePublished.error ?
+              <p className="text-[13px] text-muted">The published version could not be read ({sincePublished.error}), so the changes are not listed.</p> :
+              <ChangeList summary={sincePublished.summary} emptyText="Nothing: the draft is the same as the published version." />}
+              </div>
+            </section>
+        }
           {serverErrors &&
         <div role="alert" className="rounded-lg border border-danger/30 bg-danger-soft p-3">
               <p className="text-sm font-medium text-danger">The server did not publish this draft</p>

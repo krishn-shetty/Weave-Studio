@@ -75,8 +75,6 @@ interface StudioValue {
   publish: (agentId: string, bump: VersionBump) => Promise<PublishResult>;
   deploy: (agentId: string, version: string, env: EnvironmentName, note: string) => Promise<DeployOutcome>;
   rollback: (agentId: string, env: EnvironmentName) => Promise<DeployOutcome | null>;
-  /** Saves a version's config as the draft (with the revision check). Throws with the server's reason on failure. */
-  restoreVersion: (agentId: string, version: string) => Promise<void>;
   /** A version's config from the server (cached on the agent once loaded). */
   loadVersionConfig: (agentId: string, version: string) => Promise<AgentConfig>;
   refreshAgents: () => Promise<void>;
@@ -554,22 +552,6 @@ export function StudioProvider({ children }: StudioProviderProps) {
     [updateAgent]
   );
 
-  const restoreVersion = useCallback(
-    async (agentId: string, version: string) => {
-      const agent = agentsRef.current.find((a) => a.id === agentId);
-      if (!agent) return;
-
-      const config = await loadVersionConfig(agentId, version);
-      const res = await saveDraft(agentId, config, agent.draft.revision);
-      if (!res.ok) {
-        throw new Error(`${res.conflict.saved_by || 'Someone'} saved the draft at ${res.conflict.saved_at} while you were choosing. Nothing was restored.`);
-      }
-      await refreshAgent(agentId);
-      log('restored', agentId, `Restored ${version} as the draft`);
-    },
-    [loadVersionConfig, saveDraft, refreshAgent, log]
-  );
-
   const value = useMemo(
     () => ({
       agents,
@@ -598,7 +580,6 @@ export function StudioProvider({ children }: StudioProviderProps) {
       publish,
       deploy,
       rollback,
-      restoreVersion,
       loadVersionConfig,
       refreshAgents,
       refreshAgent,
@@ -628,7 +609,6 @@ export function StudioProvider({ children }: StudioProviderProps) {
       publish,
       deploy,
       rollback,
-      restoreVersion,
       loadVersionConfig,
       refreshAgents,
       refreshAgent,

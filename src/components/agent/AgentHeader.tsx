@@ -7,6 +7,8 @@ import type { AgentReadiness } from '../../hooks/useReadiness';
 import { STAGES } from '../../models/agentPages';
 import { openStepsOn } from '../../models/readiness';
 import { ReadinessCard } from './Readiness';
+import { ChangesDialog } from './ChangesDialog';
+import { useChangesSincePublished } from '../../hooks/usePublishedChanges';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/Button';
 import { StatusChip } from '../ui/StatusChip';
@@ -24,6 +26,8 @@ interface AgentHeaderProps {
 export function AgentHeader({ editor, onPublish, readiness, stage }: AgentHeaderProps) {
   const { can } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [changesOpen, setChangesOpen] = useState(false);
+  const changes = useChangesSincePublished(editor);
   const agent = editor.agent;
   if (!agent) return null;
   const view = editor.validationView;
@@ -54,7 +58,16 @@ export function AgentHeader({ editor, onPublish, readiness, stage }: AgentHeader
               <span className="text-muted">Checking…</span>
               }
               <span aria-hidden className="text-line-strong">|</span>
-              {publishStep && <span>{publishStep.state === 'done' ? publishStep.text : 'Not published yet.'}</span>}
+              {!changes.version ?
+              <span>Not published yet.</span> :
+              <button
+                type="button"
+                onClick={() => setChangesOpen(true)}
+                className="rounded font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                title={publishStep?.text}>
+                  {changes.error ? `v${changes.version}: changes could not be counted` : !changes.config ? `v${changes.version}` : changes.summary.total ? `${changes.summary.total} unpublished ${changes.summary.total === 1 ? 'change' : 'changes'}` : `Same as v${changes.version}`}
+                </button>
+              }
               {deployStep && <span>{deployStep.state === 'done' ? deployStep.text : 'Not live anywhere.'}</span>}
             </div>
           </div>
@@ -141,6 +154,7 @@ export function AgentHeader({ editor, onPublish, readiness, stage }: AgentHeader
           {readiness && <ReadinessCard agentId={agent.id} readiness={readiness.readiness} />}
         </div>
       </div>
+      <ChangesDialog editor={editor} open={changesOpen} onClose={() => setChangesOpen(false)} />
       {editor.config && (
         <PromptPreviewModal
           open={previewOpen}

@@ -12,6 +12,7 @@ import { Dialog } from '../ui/Dialog';
 import { DeployDialog } from './release/DeployDialog';
 import { CompareDialog } from './release/CompareDialog';
 import { ShipStrip } from './Readiness';
+import { restoreAsDraft } from '../../models/changes';
 import type { ShipFlow } from '../../models/shipFlow';
 import { currentDeployments, draftChangeCount, environments, envLabel, pendingDeployment } from '../../utils/agentStatus';
 import { timeAgo } from '../../utils/format';
@@ -25,7 +26,7 @@ interface ReleaseStageProps {
 
 export function ReleaseStage({ editor, onPublish, ship }: ReleaseStageProps) {
   const agent = editor.agent!;
-  const { rollback, restoreVersion, logAudit, loadVersionConfig } = useStudio();
+  const { rollback, logAudit, loadVersionConfig } = useStudio();
   const { can } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -100,8 +101,13 @@ export function ReleaseStage({ editor, onPublish, ship }: ReleaseStageProps) {
     const target = restoreTarget;
     setReleaseBusy(true);
     try {
-      await restoreVersion(agent.id, target);
-      toast.success(`${target} restored as your draft`, { description: 'Nothing changed for callers. Test and publish when ready.' });
+      // An ordinary edit: the version's settings go into the editor (keeping the draft's own version number), nothing
+      // is saved until Save, and Undo takes it back.
+      const config = await loadVersionConfig(agent.id, target);
+      if (!editor.config) throw new Error('The draft is not loaded.');
+      editor.replaceConfig(restoreAsDraft(editor.config, config));
+      logAudit('restored', agent.id, `Put ${target} into the editor as the draft (not saved yet)`);
+      toast.success(`${target} is in the editor`, { description: 'Not saved yet: press Save to keep it, or Undo (Ctrl+Z) to go back. Nothing changed for callers.' });
       setRestoreTarget(null);
       navigate(`/agents/${agent.id}/build`);
     } catch (err: unknown) {
@@ -272,16 +278,16 @@ export function ReleaseStage({ editor, onPublish, ship }: ReleaseStageProps) {
         open={!!restoreTarget}
         onClose={() => setRestoreTarget(null)}
         title={`Restore ${restoreTarget} as your draft?`}
-        description="Replaces the working draft with this version’s settings. Nothing changes for callers."
+        description="Puts this version’s settings into the editor as the draft. Nothing is saved until you press Save, Undo takes it back, and nothing changes for callers."
         footer={
         <>
             <Button variant="ghost" onClick={() => setRestoreTarget(null)}>Cancel</Button>
-            <Button variant="primary" onClick={confirmRestore} disabled={releaseBusy}>{releaseBusy ? 'Restoring…' : 'Restore'}</Button>
+            <Button variant="primary" onClick={confirmRestore} disabled={releaseBusy}>{releaseBusy ? 'Reading the version…' : 'Put it in the editor'}</Button>
           </>
         }>
         
         <p className="text-sm text-ink-soft">
-          {changes === null ? 'Any unpublished changes in your draft will be replaced. Publish first if you want to keep them.' : changes > 0 ? `Your draft has ${changes} unpublished ${changes === 1 ? 'change' : 'changes'} that will be replaced. Publish first if you want to keep them.` : 'Your draft has no unpublished changes, so nothing is lost.'}
+          {changes === null ? 'Unpublished changes in the draft would be replaced in the editor; Undo brings them back.' : changes > 0 ? `The saved draft has ${changes} unpublished ${changes === 1 ? 'change' : 'changes'}. They are replaced in the editor; Undo brings them back, and nothing is lost until you save.` : 'The draft has no unpublished changes.'}
         </p>
       </Dialog>
     </div>);
