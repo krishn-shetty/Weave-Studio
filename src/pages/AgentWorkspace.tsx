@@ -11,6 +11,7 @@ import { NextStepBar } from '../components/agent/NextStepBar';
 import { ConflictDialog } from '../components/agent/ConflictDialog';
 import { PublishDialog } from '../components/agent/PublishDialog';
 import { SaveFirstDialog } from '../components/agent/SaveFirstDialog';
+import { LeaveGuard } from '../components/agent/LeaveGuard';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Button } from '../components/ui/Button';
 import { useStudio } from '../contexts/StudioContext';
@@ -24,7 +25,7 @@ export function AgentWorkspace() {
   const stage: StageId = stageIds.includes(stageParam) ? stageParam : 'build';
   const navigate = useNavigate();
   const editor = useDraftEditor(agentId);
-  const { refreshAgent } = useStudio();
+  const { refreshAgent, loading } = useStudio();
   const [retrying, setRetrying] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
@@ -66,6 +67,9 @@ export function AgentWorkspace() {
 
   }
 
+  // A deep link opened before the agent list has arrived: not "not found" yet, just not read yet.
+  if (!editor.agent && loading) return <WorkspaceSkeleton />;
+
   if (!editor.agent || !editor.config || !editor.validation) {
     return (
       <div className="mx-auto max-w-lg px-6 py-24 text-center">
@@ -90,7 +94,33 @@ export function AgentWorkspace() {
       <NextStepBar stage={stage} agentId={agentId} onPublish={openPublish} />
       <ConflictDialog editor={editor} />
       <SaveFirstDialog editor={editor} />
+      <LeaveGuard editor={editor} agentId={agentId} />
       <PublishDialog open={publishOpen} onClose={() => setPublishOpen(false)} editor={editor} onGoToField={goToField} />
+    </div>);
+
+}
+
+/** The agent header and a page body, in the shape they take once loaded. */
+function WorkspaceSkeleton() {
+  return (
+    <div className="flex min-h-screen flex-col" aria-busy="true" aria-label="Loading the agent">
+      <div className="border-b border-line bg-surface">
+        <div className="mx-auto max-w-7xl px-6 py-3.5 lg:px-10">
+          <div className="h-7 w-56 animate-pulse rounded bg-subtle" />
+          <div className="mt-2.5 h-4 w-96 max-w-full animate-pulse rounded bg-subtle" />
+          <div className="mt-4 flex gap-3">
+            {[0, 1, 2, 3, 4].map((i) => <div key={i} className="h-8 w-20 animate-pulse rounded bg-subtle" />)}
+          </div>
+        </div>
+      </div>
+      <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
+        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-4">
+            {[0, 1, 2].map((i) => <div key={i} className="h-40 animate-pulse rounded-xl bg-subtle" />)}
+          </div>
+          <div className="h-64 animate-pulse rounded-xl bg-subtle" />
+        </div>
+      </div>
     </div>);
 
 }
