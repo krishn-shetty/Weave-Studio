@@ -3,6 +3,7 @@ import type { AgentConfig, ChannelType } from '../types/studio';
 import type { ChatMessage, FormRequest, TraceEvent } from '../types/testConsole';
 import { api, followCall } from '../api/client';
 import type { Session } from '../api/types';
+import { reportLiveKitStatus } from './useLiveKitStatus';
 import type { BubbleState } from '../components/agent/test/VoiceBubble';
 
 export type SessionStatus = 'idle' | 'connecting' | 'waiting' | 'live' | 'ended' | 'error';
@@ -294,6 +295,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
 
         // 4. Connect to LiveKit room
         await room.connect(session.livekit_url, session.token);
+        reportLiveKitStatus({ state: 'ok', at: Date.now(), connectMs: Date.now() - startRef.current });
         setStatus('live');
         await room.startAudio().catch((err: unknown) => {
           // Audio autoplay may require user interaction
@@ -329,6 +331,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         setStatus('error');
         setBubbleState('error');
         const msg = err?.message || 'Could not start live conversation.';
+        reportLiveKitStatus({ state: 'failed', at: Date.now(), message: msg });
         setError(msg);
         addTrace([
           {

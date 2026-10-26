@@ -30,6 +30,8 @@ import type {
 import { toServerConfig } from '../utils/configFactory';
 
 const BASE = (import.meta as ImportMeta & { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || '/api';
+/** Where the browser sends API calls (the gateway or dev proxy); the backend address itself is server config. */
+export const API_BASE = BASE;
 
 let currentUser = '';
 export const setApiUser = (name: string) => {
