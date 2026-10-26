@@ -1,0 +1,46 @@
+// A call as GET /bots/{id}/calls lists it, read into the CallRecord the screens use. One place, so every screen
+// says the same about a call. Pure.
+
+import type { CallSummaryItem } from '../api/types';
+import type { CallOutcome, CallRecord, ChannelType } from '../types/studio';
+
+/** ended -> resolved or handed over; unfinished (the log stopped without an end) -> cut off; else still in progress. */
+export function callOutcome(status: string, handoffs = 0): CallOutcome {
+  if (status === 'ended') return handoffs > 0 ? 'handed_over' : 'resolved';
+  if (status === 'unfinished') return 'cut_off';
+  return 'in_progress';
+}
+
+export function callChannel(channel: CallSummaryItem['channel']): ChannelType {
+  const type = typeof channel === 'object' && channel !== null ? channel.type : channel;
+  if (type === 'web_chat') return 'web_chat';
+  if (type === 'sip_voice' || type === 'phone') return 'phone';
+  return 'web_voice';
+}
+
+/** draft = a test conversation; an environment name; anything else (a version, "latest") is shown as it is. */
+export function callEnvironment(ref: string | undefined): CallRecord['environment'] {
+  if (!ref || ref === 'draft') return 'test';
+  if (ref === 'development' || ref === 'staging' || ref === 'production') return ref;
+  return 'other';
+}
+
+export function toCallRecord(c: CallSummaryItem, agentId: string): CallRecord {
+  const channelId = typeof c.channel === 'object' && c.channel !== null ? c.channel.id : c.channel;
+  return {
+    id: c.id,
+    agentId: c.bot || agentId,
+    channel: callChannel(c.channel),
+    environment: callEnvironment(c.ref),
+    ref: c.ref,
+    version: c.version || 'draft',
+    started_at: c.started_at,
+    duration_s: c.duration_s || 0,
+    outcome: callOutcome(c.status, c.handoffs || 0),
+    caller: c.caller || 'Anonymous visitor',
+    summary: `Call in ${channelId || 'channel'} · ${c.duration_s || 0}s (${c.agent_turns || 0} agent turns)`,
+    transcript: [],
+    tool_calls: [],
+    errors: [],
+  };
+}

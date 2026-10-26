@@ -32,6 +32,7 @@ import { api } from '../../api/client';
 import { cn } from '../../utils/styles';
 import type { CallRecord } from '../../types/studio';
 import { callPath } from '../../utils/routes';
+import { toCallRecord } from '../../utils/callRecords';
 
 type Period = '7' | '14' | '30';
 
@@ -64,33 +65,7 @@ export function MonitorStage({ editor }: { editor: DraftEditor }) {
     try {
       const res = await api.listCalls(agent.id, { limit: 50 });
       if (res && Array.isArray(res.calls)) {
-        const mapped: CallRecord[] = res.calls.map((c: any) => {
-          const isEnded = c.status === 'ended';
-          const handoffs = c.handoffs || 0;
-          const callOutcome = isEnded
-            ? handoffs > 0
-              ? 'handed_over'
-              : 'resolved'
-            : c.status === 'unfinished'
-            ? 'cut_off'
-            : 'abandoned';
-
-          return {
-            id: c.id,
-            agentId: c.bot || agent.id,
-            channel: c.channel?.type === 'web_chat' ? 'web_chat' : c.channel?.type === 'sip_voice' ? 'phone' : 'web_voice',
-            environment: c.ref === 'draft' ? 'test' : ((c.ref || 'development') as any),
-            version: c.version || 'draft',
-            started_at: c.started_at,
-            duration_s: c.duration_s || 0,
-            outcome: callOutcome,
-            caller: c.caller || 'Visitor',
-            summary: `Call in ${c.channel?.id || 'channel'} · ${c.duration_s || 0}s (${c.agent_turns || 0} turns)`,
-            transcript: [],
-            tool_calls: [],
-            errors: [],
-          };
-        });
+        const mapped: CallRecord[] = res.calls.map((c) => toCallRecord(c, agent.id));
         setRealCalls(mapped);
       }
     } catch {

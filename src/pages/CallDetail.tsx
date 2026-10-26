@@ -18,17 +18,7 @@ import type {
   TranscriptLine,
 } from "../types/studio";
 import type { CallTranscriptResponse } from "../api/types";
-
-function getCallOutcome(status: string, handoffs: number): CallRecord["outcome"] {
-  if (status === "ended") return handoffs > 0 ? "handed_over" : "resolved";
-  return status === "unfinished" ? "cut_off" : "abandoned";
-}
-
-function getChannelValue(channel: CallTranscriptResponse["call"]["channel"]): string {
-  return typeof channel === "object" && channel !== null
-    ? channel.type || ""
-    : channel || "";
-}
+import { toCallRecord } from "../utils/callRecords";
 
 // Seconds into the call: elapsed_s when the record has it, else the turn's time (`at`, ISO) minus the call's start.
 function secondsIntoCall(turn: CallTranscriptResponse["turns"][number], startedAt: string): number | undefined {
@@ -46,37 +36,8 @@ function mapTranscript(response: CallTranscriptResponse): TranscriptLine[] {
   }));
 }
 
-function normalizeEnvironment(ref?: string): CallRecord["environment"] {
-  if (ref === "draft") return "test";
-  if (ref === "development" || ref === "staging" || ref === "production") return ref;
-  return "development";
-}
-
 function mapCall(response: CallTranscriptResponse, agentId: string, lines: TranscriptLine[]): CallRecord {
-  const { call } = response;
-  const channelType = getChannelValue(call.channel);
-  const channelId = typeof call.channel === "object" && call.channel !== null
-    ? call.channel.id || ""
-    : String(call.channel || "");
-  let channel: CallRecord["channel"] = "web_voice";
-  if (channelType === "web_chat") channel = "web_chat";
-  else if (channelType === "sip_voice") channel = "phone";
-
-  return {
-    id: call.id,
-    agentId: call.bot || agentId,
-    channel,
-    environment: normalizeEnvironment(call.ref),
-    version: call.version || "draft",
-    started_at: call.started_at,
-    duration_s: call.duration_s || 0,
-    outcome: getCallOutcome(call.status, call.handoffs || 0),
-    caller: call.caller || "Anonymous visitor",
-    summary: `Call in ${channelId || "channel"} · ${call.duration_s || 0}s (${lines.length} turns)`,
-    transcript: lines,
-    tool_calls: [],
-    errors: [],
-  };
+  return { ...toCallRecord(response.call, agentId), transcript: lines };
 }
 
 type TimelineItem =
@@ -183,7 +144,9 @@ export function CallDetail() {
   if (call) {
     envText = call.environment === "test"
       ? "Test conversation"
-      : call.environment.charAt(0).toUpperCase() + call.environment.slice(1);
+      : call.environment === "other"
+        ? `Ran on ${call.ref}`
+        : call.environment.charAt(0).toUpperCase() + call.environment.slice(1);
   }
 
   const handleBack = () => {

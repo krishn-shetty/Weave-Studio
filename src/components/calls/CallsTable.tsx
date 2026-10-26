@@ -14,7 +14,7 @@ export const outcomeMeta: Record<CallOutcome, {label: string;tone: ChipTone;}> =
   resolved: { label: 'Resolved', tone: 'success' },
   handed_over: { label: 'Handed over', tone: 'info' },
   cut_off: { label: 'Cut off', tone: 'danger' },
-  abandoned: { label: 'Abandoned', tone: 'neutral' }
+  in_progress: { label: 'In progress', tone: 'neutral' }
 };
 
 export const channelName: Record<ChannelType, string> = { phone: 'Phone', web_chat: 'Web chat', web_voice: 'Web voice' };

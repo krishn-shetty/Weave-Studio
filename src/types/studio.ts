@@ -189,7 +189,7 @@ export interface ActivityItem {
   detail: string;
 }
 
-export type CallOutcome = 'resolved' | 'handed_over' | 'cut_off' | 'abandoned';
+export type CallOutcome = 'resolved' | 'handed_over' | 'cut_off' | 'in_progress';
 
 export interface TranscriptLine {
   speaker: 'agent' | 'caller';
@@ -211,7 +211,10 @@ export interface CallRecord {
   id: string;
   agentId: string;
   channel: ChannelType;
-  environment: EnvironmentName | 'test';
+  /** test = a test conversation (the draft); other = run on a version or 'latest' directly (see ref). */
+  environment: EnvironmentName | 'test' | 'other';
+  /** What the call ran on, as the server recorded it: draft, an environment, a version. */
+  ref?: string;
   version: string;
   started_at: string;
   duration_s: number;

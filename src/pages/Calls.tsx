@@ -33,6 +33,7 @@ import { cn, inputClass } from '../utils/styles';
 import { api } from '../api/client';
 import type { CallRecord } from '../types/studio';
 import { callPath } from '../utils/routes';
+import { toCallRecord } from '../utils/callRecords';
 
 export function Calls() {
   const { agents } = useStudio();
@@ -51,6 +52,8 @@ export function Calls() {
   const [realCalls, setRealCalls] = useState<CallRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Agents whose calls could not be loaded; the list is then incomplete and says so.
+  const [failedAgents, setFailedAgents] = useState<string[]>([]);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -77,42 +80,17 @@ export function Calls() {
     setLoading(true);
     setError(null);
     try {
-      const targets = agent ? [agent] : agents.length > 0 ? agents.map((a) => a.id) : ['voice-test'];
+      const targets = agent ? [agent] : agents.map((a) => a.id);
       const results = await Promise.allSettled(
         targets.map((botId) => api.listCalls(botId, { limit: 50 }))
       );
 
       const combined: CallRecord[] = [];
+      setFailedAgents(results.flatMap((res, i) => (res.status === 'rejected' ? [targets[i]] : [])));
       results.forEach((res, i) => {
         if (res.status === 'fulfilled' && res.value && Array.isArray(res.value.calls)) {
           const botId = targets[i];
-          res.value.calls.forEach((c: any) => {
-            const isEnded = c.status === 'ended';
-            const handoffs = c.handoffs || 0;
-            const callOutcome = isEnded
-              ? handoffs > 0
-                ? 'handed_over'
-                : 'resolved'
-              : c.status === 'unfinished'
-                ? 'cut_off'
-                : 'abandoned';
-
-            combined.push({
-              id: c.id,
-              agentId: c.bot || botId,
-              channel: c.channel?.type === 'web_chat' ? 'web_chat' : c.channel?.type === 'sip_voice' ? 'phone' : 'web_voice',
-              environment: c.ref === 'draft' ? 'test' : ((c.ref || 'development') as any),
-              version: c.version || 'draft',
-              started_at: c.started_at,
-              duration_s: c.duration_s || 0,
-              outcome: callOutcome,
-              caller: c.caller || 'Anonymous visitor',
-              summary: `Call in ${c.channel?.id || 'channel'} · ${c.duration_s || 0}s (${c.agent_turns || 0} turns)`,
-              transcript: [],
-              tool_calls: [],
-              errors: [],
-            });
-          });
+          res.value.calls.forEach((c) => combined.push(toCallRecord(c, botId)));
         }
       });
 
@@ -310,6 +288,12 @@ export function Calls() {
           Web Voice Calls
         </button>
       </div>
+
+      {failedAgents.length > 0 && !error && (
+        <p role="alert" className="mt-6 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-ink-soft">
+          Calls for {failedAgents.map((id) => agentNames[id] ?? id).join(', ')} could not be loaded, so this list is incomplete.
+        </p>
+      )}
 
       {loading && realCalls.length === 0 ? (
         <div className="mt-6 flex flex-col items-center justify-center rounded-lg border border-line bg-surface p-12 text-center">
