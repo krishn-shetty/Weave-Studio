@@ -296,7 +296,7 @@ export interface TestRun {
   version?: string;
   config_checksum?: string;
   options?: { live?: boolean; allow_network?: boolean };
-  status: 'running' | 'passed' | 'failed' | 'error';
+  status: 'running' | 'passed' | 'failed' | 'error' | 'skipped';
   started_at: string;
   finished_at?: string | null;
   total?: number;

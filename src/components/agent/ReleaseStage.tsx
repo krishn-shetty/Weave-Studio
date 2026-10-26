@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from '../ui/Toast';
-import { DownloadIcon, LoaderCircleIcon, RotateCcwIcon, TriangleAlertIcon } from 'lucide-react';
+import { DownloadIcon, LoaderCircleIcon, RotateCcwIcon } from 'lucide-react';
 import type { EnvironmentName, Version } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import { useStudio } from '../../contexts/StudioContext';
@@ -11,15 +11,19 @@ import { StatusChip } from '../ui/StatusChip';
 import { Dialog } from '../ui/Dialog';
 import { DeployDialog } from './release/DeployDialog';
 import { CompareDialog } from './release/CompareDialog';
+import { ShipStrip } from './Readiness';
+import type { ShipFlow } from '../../models/shipFlow';
 import { currentDeployments, draftChangeCount, environments, envLabel, pendingDeployment } from '../../utils/agentStatus';
-import { formatPercent, timeAgo } from '../../utils/format';
+import { timeAgo } from '../../utils/format';
 
 interface ReleaseStageProps {
   editor: DraftEditor;
   onPublish: () => void;
+  /** The ship flow (readiness model): the same status Overview, the header and the lists show. */
+  ship: ShipFlow | null;
 }
 
-export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
+export function ReleaseStage({ editor, onPublish, ship }: ReleaseStageProps) {
   const agent = editor.agent!;
   const { rollback, restoreVersion, logAudit, loadVersionConfig } = useStudio();
   const { can } = useAuth();
@@ -56,18 +60,17 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null);
 
   useEffect(() => {
-    const deployV = params.get('deploy');
+    const deployV = params.get('deploy') ?? (params.get('focus') === 'deploy' ? agent.versions[0]?.version ?? null : null);
     const rb = params.get('rollback') as EnvironmentName | null;
     if (deployV) setDeployTarget({ version: deployV, env: 'development' });
     if (rb && environments.includes(rb)) setRollbackEnv(rb);
-    if (deployV || rb) setParams({}, { replace: true });
+    if (deployV || rb || params.get('focus')) setParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const current = currentDeployments(agent);
   const latest = agent.versions[0];
   const changes = draftChangeCount(agent);
-  const suggestRollback = false;
 
   const canDeployTo = (env: EnvironmentName) => env === 'production' ? can('deploy_production') : can('deploy');
   const rbDeployment = rollbackEnv ? current[rollbackEnv] : undefined;
@@ -110,6 +113,7 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
+      {ship && <div className="mb-8"><ShipStrip agentId={agent.id} ship={ship} onSave={() => void editor.save()} onPublish={onPublish} /></div>}
       <section aria-labelledby="envs-title">
         <h2 id="envs-title" className="text-sm font-semibold text-ink">Environments</h2>
         <div className="mt-3 grid gap-4 md:grid-cols-3">

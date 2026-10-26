@@ -1,37 +1,36 @@
 import React, { useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
-import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, CircleDotIcon, EyeIcon, LoaderCircleIcon, Redo2Icon, RocketIcon, SaveIcon, Undo2Icon } from 'lucide-react';
+import { NavLink } from 'react-router-dom';
+import { CircleAlertIcon, CircleCheckIcon, CircleDotIcon, EyeIcon, LoaderCircleIcon, Redo2Icon, RocketIcon, SaveIcon, Undo2Icon } from 'lucide-react';
 import type { StageId } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
+import type { AgentReadiness } from '../../hooks/useReadiness';
+import { STAGES } from '../../models/agentPages';
+import { openStepsOn } from '../../models/readiness';
+import { ReadinessCard } from './Readiness';
 import { useAuth } from '../../contexts/AuthContext';
 import { Button } from '../ui/Button';
 import { StatusChip } from '../ui/StatusChip';
 import { PromptPreviewModal } from './build/PromptPreviewModal';
-import { currentDeployments, environments, envLabel, latestVersion } from '../../utils/agentStatus';
 import { formatClock } from '../../utils/format';
 import { cn } from '../../utils/styles';
-
-const stages: {id: StageId;label: string;}[] = [
-{ id: 'build', label: 'Build' },
-{ id: 'test', label: 'Test' },
-{ id: 'release', label: 'Release' },
-{ id: 'monitor', label: 'Monitor' }];
-
 
 interface AgentHeaderProps {
   editor: DraftEditor;
   onPublish: () => void;
+  readiness: AgentReadiness | null;
+  stage: StageId;
 }
 
-export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
+export function AgentHeader({ editor, onPublish, readiness, stage }: AgentHeaderProps) {
   const { can } = useAuth();
   const [previewOpen, setPreviewOpen] = useState(false);
   const agent = editor.agent;
   if (!agent) return null;
-  const latest = latestVersion(agent);
-  const current = currentDeployments(agent);
-  const live = environments.filter((e) => current[e]);
   const view = editor.validationView;
+  // Published and live, in the readiness model's own words (the same everywhere).
+  const publishStep = readiness?.readiness.steps.find((s) => s.id === 'publish');
+  const deployStep = readiness?.readiness.steps.find((s) => s.id === 'deploy');
+  const problems = view.report?.errors.length ?? 0;
 
   return (
     <header className="sticky top-0 z-20 border-b border-line bg-surface/95 backdrop-blur">
@@ -55,9 +54,8 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
               <span className="text-muted">Checking…</span>
               }
               <span aria-hidden className="text-line-strong">|</span>
-              <span>{latest ? <>Latest <span className="font-mono text-ink">{latest.version}</span></> : 'Not published yet'}</span>
-              <span aria-hidden className="text-line-strong">|</span>
-              <span>{live.length ? `Live in ${live.map(envLabel).join(', ')}` : 'Not live anywhere'}</span>
+              {publishStep && <span>{publishStep.state === 'done' ? publishStep.text : 'Not published yet.'}</span>}
+              {deployStep && <span>{deployStep.state === 'done' ? deployStep.text : 'Not live anywhere.'}</span>}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -119,24 +117,29 @@ export function AgentHeader({ editor, onPublish }: AgentHeaderProps) {
             </Button>
           </div>
         </div>
-        <nav aria-label="Agent stages" className="mt-3 flex items-center gap-1 overflow-x-auto">
-          {stages.map((s, i) =>
-          <React.Fragment key={s.id}>
-              <NavLink
-              to={`/agents/${agent.id}/${s.id}`}
-              className={({ isActive }) =>
-              cn(
-                '-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
-                isActive ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
-              )
-              }>
-              
-                {s.label}
-              </NavLink>
-              {i < stages.length - 1 && <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-line-strong" aria-hidden />}
-            </React.Fragment>
-          )}
-        </nav>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3">
+          <nav aria-label="Agent stages" className="flex items-center gap-1 overflow-x-auto">
+            {STAGES.map((s) => {
+              const open = readiness ? openStepsOn(readiness.readiness, (t) => t.stage === s.id).length : 0;
+              const count = s.id === 'build' ? problems : 0;
+              return (
+                <NavLink
+                  key={s.id}
+                  to={`/agents/${agent.id}/${s.id}`}
+                  className={({ isActive }) =>
+                  cn(
+                    '-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+                    isActive || stage === s.id ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'
+                  )
+                  }>
+                  {s.label}
+                  <NavMark open={open} problems={count} />
+                </NavLink>);
+
+            })}
+          </nav>
+          {readiness && <ReadinessCard agentId={agent.id} readiness={readiness.readiness} />}
+        </div>
       </div>
       {editor.config && (
         <PromptPreviewModal
@@ -189,4 +192,10 @@ function SaveIndicator({ editor }: {editor: DraftEditor;}) {
       {editor.saveLabel}{editor.savedAt ? ` ${formatClock(editor.savedAt)}` : ''}
     </span>);
 
+}
+/** A number when the server's checks found problems on a page; else a small ring when a step is still to do there. */
+export function NavMark({ open, problems }: { open: number; problems: number }) {
+  if (problems > 0) return <span className="rounded-full bg-danger-soft px-1.5 text-[11px] font-semibold text-danger" aria-label={`${problems} ${problems === 1 ? 'problem' : 'problems'}`}>{problems}</span>;
+  if (open > 0) return <span className="h-2 w-2 rounded-full border-2 border-accent" aria-label={`${open} ${open === 1 ? 'step' : 'steps'} to do here`} title={`${open} ${open === 1 ? 'step' : 'steps'} to do here`} />;
+  return null;
 }

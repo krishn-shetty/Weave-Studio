@@ -1,19 +1,25 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { FileJsonIcon } from 'lucide-react';
-import type { EditorView, Path } from '../../types/studio';
+import type { Path } from '../../types/studio';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import type { SettingGroupId } from '../../data/settingsCatalog';
-import { Segmented } from '../ui/Segmented';
+import type { Readiness } from '../../models/readiness';
+import { openStepsOn } from '../../models/readiness';
+import { BUILD_SECTIONS, problemsBySection, targetPath, type BuildSection } from '../../models/agentPages';
 import { Button } from '../ui/Button';
-import { GuidedView } from './build/GuidedView';
+import { GuidedView, type GuidedPart } from './build/GuidedView';
 import { DetailedView } from './build/DetailedView';
 import { JsonView } from './build/JsonView';
 import { WorkflowCanvas } from './build/WorkflowCanvas';
+import { KnowledgeSection } from './build/KnowledgeSection';
+import { GuardrailsSection } from './build/GuardrailsSection';
 import { ValidationPanel } from './ValidationPanel';
 import { ConcurrentEditBanner } from './ConcurrentEditBanner';
 import { ImportExportModal } from './build/ImportExportModal';
+import { NavMark } from './AgentHeader';
 import { fieldId } from '../../utils/path';
+import { cn } from '../../utils/styles';
 
 export interface FocusRequest {
   path: Path;
@@ -22,41 +28,79 @@ export interface FocusRequest {
 
 interface BuildStageProps {
   editor: DraftEditor;
+  section: BuildSection;
+  readiness: Readiness | null;
   focusRequest: FocusRequest | null;
 }
 
-const views: {value: EditorView;label: string;}[] = [
-  { value: 'guided', label: 'Guided' },
-  { value: 'detailed', label: 'Detailed' },
-  { value: 'canvas', label: 'Workflow' },
-  { value: 'json', label: 'JSON' }
+type BuildView = 'section' | 'all' | 'canvas' | 'json';
+
+const VIEWS: { id: Exclude<BuildView, 'section'>; label: string }[] = [
+  { id: 'all', label: 'All settings' },
+  { id: 'canvas', label: 'Workflow' },
+  { id: 'json', label: 'JSON' },
 ];
+
+/** What each section shows: its plain controls first, then every setting of that part. */
+const SECTION_PARTS: Record<BuildSection, { parts: GuidedPart[]; groups: SettingGroupId[] }> = {
+  agent: { parts: ['personality', 'voice', 'model'], groups: ['about', 'talks', 'behaves', 'engine'] },
+  channels: { parts: ['channels'], groups: ['available'] },
+  tools: { parts: ['tools'], groups: ['can_do'] },
+  knowledge: { parts: [], groups: [] },
+  guardrails: { parts: [], groups: [] },
+  aftercall: { parts: ['records'], groups: ['after', 'records'] },
+};
 
 function highlight(path: Path, minLength: number): boolean {
   for (let len = path.length; len >= minLength && len > 0; len--) {
     const el = document.getElementById(fieldId(path.slice(0, len)));
     if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      el.querySelector<HTMLElement>('input, textarea, select, button')?.focus({ preventScroll: true });
-      el.classList.add('ring-2', 'ring-danger/40', 'ring-offset-4');
-      window.setTimeout(() => el.classList.remove('ring-2', 'ring-danger/40', 'ring-offset-4'), 1800);
+      flash(el);
       return true;
     }
   }
   return false;
 }
 
-export function BuildStage({ editor, focusRequest }: BuildStageProps) {
+function flash(el: HTMLElement) {
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.querySelector<HTMLElement>('input, textarea, select, button')?.focus({ preventScroll: true });
+  el.classList.add('ring-2', 'ring-accent/40', 'ring-offset-4');
+  window.setTimeout(() => el.classList.remove('ring-2', 'ring-accent/40', 'ring-offset-4'), 1800);
+}
+
+/** A readiness step's `focus` -> the field it is about (on this section), by its id in the page. */
+function focusElement(focus: string, editor: DraftEditor): HTMLElement | null {
+  const config = editor.config;
+  const items = config?.agents?.items ?? [];
+  const entry = Math.max(0, items.findIndex((a) => a.id === config?.agents?.entry));
+  const greeting = Math.max(0, (config?.channels ?? []).findIndex((c) => c.enabled));
+  const ids: Record<string, string> = {
+    instructions: fieldId(['agents', 'items', entry, 'instructions']),
+    greeting: fieldId(['channels', greeting, 'greeting']),
+    language: fieldId('defaults.language.primary'),
+    voice: fieldId('defaults.models.tts.voice_id'),
+    model: fieldId('defaults.models.llm.model'),
+    problems: 'checks-panel',
+  };
+  return ids[focus] ? document.getElementById(ids[focus]) : null;
+}
+
+export function BuildStage({ editor, section, readiness, focusRequest }: BuildStageProps) {
   const [params, setParams] = useSearchParams();
-  const view = (views.some((v) => v.value === params.get('view')) ? params.get('view') : 'guided') as EditorView;
+  const navigate = useNavigate();
+  const raw = params.get('view');
+  const view: BuildView = raw === 'all' || raw === 'canvas' || raw === 'json' ? raw : 'section';
   const [detailedGroup, setDetailedGroup] = useState<SettingGroupId | null>(null);
   const [importExportOpen, setImportExportOpen] = useState(false);
+  const agentId = editor.agent?.id ?? '';
 
   const setView = useCallback(
-    (v: EditorView) => {
+    (v: BuildView) => {
       const next = new URLSearchParams(params);
-      if (v === 'guided') next.delete('view');else
-      next.set('view', v);
+      next.delete('focus');
+      if (v === 'section') next.delete('view');
+      else next.set('view', v);
       setParams(next, { replace: true });
     },
     [params, setParams]
@@ -65,7 +109,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
   const focusPath = useCallback(
     (path: Path) => {
       if (view !== 'json' && highlight(path, Math.min(path.length, 2))) return;
-      setView('detailed');
+      setView('all');
       window.setTimeout(() => highlight(path, 1), 120);
     },
     [view, setView]
@@ -73,62 +117,131 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
 
   useEffect(() => {
     if (!focusRequest) return;
-    const t = window.setTimeout(() => focusPath(focusRequest.path), 60);
+    const t = window.setTimeout(() => focusPath(focusRequest.path), 80);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusRequest?.nonce]);
 
+  // ?focus= from a readiness step: open the field it is about (or the JSON view).
+  const focus = params.get('focus');
+  useEffect(() => {
+    if (!focus) return;
+    if (focus === 'json' || focus === 'tests') {
+      if (view !== 'json') setView('json');
+      return;
+    }
+    const t = window.setTimeout(() => {
+      const el = focusElement(focus, editor);
+      if (el) flash(el);
+    }, 120);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus, section]);
+
   if (!editor.config || !editor.agent) return null;
+  const problems = problemsBySection(editor.validationView.report?.errors ?? []);
+  const { parts, groups } = SECTION_PARTS[section];
+  const current = BUILD_SECTIONS.find((s) => s.id === section);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
       <ConcurrentEditBanner editor={editor} />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <Segmented label="Editor view" options={views} value={view} onChange={setView} />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setImportExportOpen(true)}
-            title="Import or Export JSON configuration"
-          >
-            <FileJsonIcon className="h-3.5 w-3.5 mr-1" />
-            Import / Export
-          </Button>
-        </div>
-        <p className="text-[13px] text-muted">One draft, three views. A change in one shows up in the others.</p>
-      </div>
+      <div className="grid gap-8 lg:grid-cols-[190px_minmax(0,1fr)] xl:grid-cols-[190px_minmax(0,1fr)_300px]">
+        <nav aria-label="Build sections" className="lg:sticky lg:top-44 lg:self-start">
+          <ul className="flex flex-wrap gap-1 lg:flex-col lg:gap-0.5">
+            {BUILD_SECTIONS.map((s) => {
+              const active = view === 'section' && s.id === section;
+              const open = readiness ? openStepsOn(readiness, (t) => t.stage === 'build' && t.section === s.id).length : 0;
+              return (
+                <li key={s.id}>
+                  <Link
+                    to={targetPath(agentId, { stage: 'build', section: s.id })}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+                      active ? 'bg-accent-soft text-accent' : 'text-ink-soft hover:bg-subtle hover:text-ink'
+                    )}>
+                    {s.label}
+                    <NavMark open={open} problems={problems[s.id] ?? 0} />
+                  </Link>
+                </li>);
 
-      <div className="mt-6 grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
+            })}
+          </ul>
+          <p className="mt-4 hidden px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted lg:block">Views</p>
+          <ul className="mt-1 flex flex-wrap gap-1 lg:flex-col lg:gap-0.5">
+            {VIEWS.map((v) =>
+            <li key={v.id}>
+                <button
+                type="button"
+                aria-pressed={view === v.id}
+                onClick={() => setView(v.id)}
+                className={cn(
+                  'w-full rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
+                  view === v.id ? 'bg-accent-soft text-accent' : 'text-ink-soft hover:bg-subtle hover:text-ink'
+                )}>
+                  {v.label}
+                </button>
+              </li>
+            )}
+            <li>
+              <button
+                type="button"
+                onClick={() => setImportExportOpen(true)}
+                className="flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-left text-[13px] font-medium text-ink-soft hover:bg-subtle hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+                <FileJsonIcon className="h-3.5 w-3.5" aria-hidden />
+                Import / Export
+              </button>
+            </li>
+          </ul>
+        </nav>
+
         <div className="min-w-0">
-          {view === 'guided' &&
-          <GuidedView
-            editor={editor}
-            onMore={(g) => {
-              setDetailedGroup(g);
-              setView('detailed');
-            }} />
-
-          }
-          {view === 'detailed' && <DetailedView editor={editor} initialGroup={detailedGroup} onOpenJson={() => setView('json')} />}
-          {view === 'canvas' && (
-            <WorkflowCanvas
+          {view === 'section' &&
+          <>
+              <div className="mb-5">
+                <h2 className="text-base font-semibold text-ink">{current?.label}</h2>
+                <p className="text-[13px] text-muted">{current?.description}</p>
+              </div>
+              {section === 'knowledge' && <KnowledgeSection editor={editor} />}
+              {section === 'guardrails' && <GuardrailsSection editor={editor} onOpenJson={() => setView('json')} />}
+              {parts.length > 0 &&
+            <GuidedView
               editor={editor}
-              onGoToDetailedGroup={(g) => {
-                setDetailedGroup(g as SettingGroupId);
-                setView('detailed');
-              }}
-            />
-          )}
+              parts={parts}
+              onMore={(g) => {
+                setDetailedGroup(g);
+                setView('all');
+              }} />
+            }
+              {groups.length > 0 &&
+            <section aria-label={`All settings for ${current?.label}`} className="mt-8">
+                  <h3 className="mb-3 text-sm font-semibold text-ink">All settings for this part</h3>
+                  <DetailedView editor={editor} initialGroup={null} onOpenJson={() => setView('json')} only={groups} />
+                </section>
+            }
+            </>
+          }
+          {view === 'all' && <DetailedView editor={editor} initialGroup={detailedGroup} onOpenJson={() => setView('json')} />}
+          {view === 'canvas' &&
+          <WorkflowCanvas
+            editor={editor}
+            onGoToDetailedGroup={(g) => {
+              setDetailedGroup(g as SettingGroupId);
+              setView('all');
+            }} />
+          }
           {view === 'json' && <JsonView editor={editor} />}
+          {view !== 'section' &&
+          <Button size="sm" variant="ghost" className="mt-4" onClick={() => navigate(targetPath(agentId, { stage: 'build', section }))}>
+              Back to {current?.label}
+            </Button>
+          }
         </div>
-        <aside className="self-start xl:sticky xl:top-44">
-          <ValidationPanel
-            view={editor.validationView}
-            config={editor.config}
-            onGoTo={focusPath}
-          />
+
+        <aside id="checks-panel" className="self-start lg:col-span-2 xl:sticky xl:top-44 xl:col-span-1">
+          <ValidationPanel view={editor.validationView} config={editor.config} onGoTo={focusPath} />
         </aside>
       </div>
 
@@ -137,9 +250,7 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
         onClose={() => setImportExportOpen(false)}
         agent={editor.agent}
         currentConfig={editor.config}
-        onConfigImported={editor.replaceConfig}
-      />
-
+        onConfigImported={editor.replaceConfig} />
     </div>);
 
 }

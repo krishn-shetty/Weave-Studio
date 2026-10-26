@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from '../components/ui/Toast';
 import {
   BookOpenIcon,
@@ -53,8 +54,9 @@ export function Knowledge() {
   const { agents } = useStudio();
   const [tab, setTab] = useState<Tab>('search');
 
-  // Agent selector
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => agents[0]?.id || 'voice-test');
+  // Agent selector: the agent named in the address (?agent=), else the first one; none until the list has arrived.
+  const [params] = useSearchParams();
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(() => params.get('agent') || agents[0]?.id || '');
 
   useEffect(() => {
     if (agents.length > 0 && !agents.some((a) => a.id === selectedAgentId)) {

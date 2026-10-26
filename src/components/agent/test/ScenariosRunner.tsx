@@ -7,6 +7,7 @@ import { Tooltip } from '../../ui/Tooltip';
 import { Accordion, AccordionContent, AccordionHeader, AccordionItem } from '../../ui/accordion';
 import { cn } from '../../../utils/styles';
 import { api } from '../../../api/client';
+import { loadFacts } from '../../../utils/agentFacts';
 import type { Scenario, TestRun } from '../../../api/types';
 import { expectationLabel, readableId, runCounts, runNotes } from '../../../utils/testRuns';
 import { formatDateTime } from '../../../utils/format';
@@ -68,6 +69,8 @@ export function ScenariosRunner({ agentId, ensureSaved }: ScenariosRunnerProps) 
           setRunning(null);
           setLatestRun(result);
           void load();
+          // The readiness steps and the ship flow read the newest run too.
+          void loadFacts(agentId, { force: true });
           const summary = runCounts(result);
           if (result.status === 'passed') toast.success(`Tests finished: ${summary}`);
           else toast.error(`Tests ${result.status}: ${summary}`, { description: result.error ?? undefined });

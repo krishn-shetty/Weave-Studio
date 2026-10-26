@@ -1,6 +1,7 @@
 // Plain words for test scenarios and runs (GET /tests, GET /tests/runs). Pure.
 
 import type { TestRun } from '../api/types';
+import type { LatestRun } from '../models/readiness';
 
 /** "track_my_order" -> "Track my order". The id itself goes in a tooltip. */
 export function readableId(id: string): string {
@@ -35,4 +36,19 @@ export function runCounts(run: Pick<TestRun, 'counts'>): string {
 export function runNotes(run: Pick<TestRun, 'scenarios'>): string[] {
   const notes = (run.scenarios ?? []).flatMap((s) => [...(s.notes ?? []), ...(s.error ? [s.error] : [])]);
   return Array.from(new Set(notes));
+}
+
+/**
+ * The newest finished run of the saved draft's tests (ref "draft"), as the readiness steps, the ship flow and the tests
+ * gate read it; null when there is none. A run still going, a run of unsaved editor contents ("unsaved") and a run of a
+ * version or an environment do not count: they did not test the saved draft.
+ */
+export function latestDraftRun(runs: TestRun[]): LatestRun | null {
+  const finished = runs
+    .filter((r) => r.status !== 'running' && (r.ref ?? 'draft') === 'draft')
+    .sort((a, b) => (b.started_at ?? '').localeCompare(a.started_at ?? ''));
+  const run = finished[0];
+  if (!run) return null;
+  const status = run.status === 'running' ? 'error' : run.status;
+  return { status, passed: run.counts?.passed ?? 0, total: run.total ?? 0, startedAt: run.started_at };
 }

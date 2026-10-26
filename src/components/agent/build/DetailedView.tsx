@@ -23,11 +23,13 @@ interface DetailedViewProps {
   editor: DraftEditor;
   initialGroup: SettingGroupId | null;
   onOpenJson: () => void;
+  /** Only these groups, without the group menu and the search (a Build section's "All settings for this part"). */
+  only?: SettingGroupId[];
 }
 
 const collectionRoot = { tools: 'tools', agents: 'agents', channels: 'channels' } as const;
 
-export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewProps) {
+export function DetailedView({ editor, initialGroup, onOpenJson, only }: DetailedViewProps) {
   const { technicalNames, setTechnicalNames } = useStudio();
   const [query, setQuery] = useState('');
   const { config, update, canEdit } = editor;
@@ -58,6 +60,7 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
   const disabled = !canEdit;
 
   const groups = settingGroups.
+  filter((g) => !only || only.includes(g.id)).
   map((g) => {
     const fields = matches.filter((s) => s.group === g.id);
     const showCollection = !!g.collection && (!needle || g.label.toLowerCase().includes(needle) || g.collection.includes(needle));
@@ -74,8 +77,8 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
   };
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
-      <nav aria-label="Setting groups" className="hidden lg:block">
+    <div className={cn('grid gap-8', !only && 'lg:grid-cols-[200px_minmax(0,1fr)]')}>
+      <nav aria-label="Setting groups" className={cn('hidden', !only && 'lg:block')}>
         <ul className="sticky top-44 space-y-0.5">
           {settingGroups.map((g) => {
             const count = groupErrorCount(g.id);
@@ -101,7 +104,7 @@ export function DetailedView({ editor, initialGroup, onOpenJson }: DetailedViewP
       </nav>
 
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-4">
+        <div className={cn('flex flex-wrap items-center gap-4', only && 'hidden')}>
           <div className="relative min-w-[240px] flex-1">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" aria-hidden />
             <input type="search" aria-label="Search settings" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search every setting, e.g. “silence” or “voice”" className={cn(inputClass, 'pl-9')} />

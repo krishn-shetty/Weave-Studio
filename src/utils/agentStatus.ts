@@ -1,4 +1,4 @@
-import type { Agent, Deployment, EnvironmentName, StageId, ValidationReport, Version } from '../types/studio';
+import type { Agent, Deployment, EnvironmentName, Version } from '../types/studio';
 import { diffConfigs, meaningfulChanges } from './diff';
 
 export const environments: EnvironmentName[] = ['development', 'staging', 'production'];
@@ -30,81 +30,4 @@ export function draftChangeCount(agent: Agent): number | null {
   if (!latest) return 0;
   if (!latest.config || agent.loadError) return null;
   return meaningfulChanges(diffConfigs(latest.config, agent.draft.config)).length;
-}
-
-
-export interface NextStep {
-  title: string;
-  body: string;
-  cta: string;
-  stage: StageId;
-  tone: 'accent' | 'danger';
-}
-
-/** report: the server's checks on the saved draft, or null while they are not known (then no "fix problems" step). */
-export function nextStep(agent: Agent, report: ValidationReport | null): NextStep {
-  if (agent.loadError) {
-    return {
-      title: `Could not load ${agent.name}`,
-      body: `The draft could not be read from the server: ${agent.loadError}`,
-      cta: 'Open agent',
-      stage: 'build',
-      tone: 'danger'
-    };
-  }
-  const latest = latestVersion(agent);
-  const live = currentDeployments(agent);
-  if (report && !report.valid) {
-    return {
-      title: `Fix ${report.errors.length} ${report.errors.length === 1 ? 'problem' : 'problems'} in ${agent.name}`,
-      body: 'The draft is saved, but the server will not publish it until these are fixed. Each one links straight to the setting.',
-      cta: 'Review problems',
-      stage: 'build',
-      tone: 'danger'
-    };
-  }
-  if (!latest) {
-    return {
-      title: `Test ${agent.name}, then publish its first version`,
-      body: 'Have a quick conversation with the draft to check the greeting and answers, then freeze it as version 0.1.0.',
-      cta: 'Test it',
-      stage: 'test',
-      tone: 'accent'
-    };
-  }
-  const changes = draftChangeCount(agent);
-  if (changes !== null && changes > 0) {
-    return {
-      title: `${changes} unpublished ${changes === 1 ? 'change' : 'changes'} in ${agent.name}`,
-      body: `Your draft has moved on since ${latest.version}. Test the changes, then publish them as a new version.`,
-      cta: 'Test changes',
-      stage: 'test',
-      tone: 'accent'
-    };
-  }
-  if (!live.development) {
-    return {
-      title: `Deploy ${latest.version} to Development`,
-      body: 'The version is frozen but not serving anywhere yet. Development is the safe first stop.',
-      cta: 'Go to Release',
-      stage: 'release',
-      tone: 'accent'
-    };
-  }
-  if (!live.production) {
-    return {
-      title: `Promote ${agent.name} towards Production`,
-      body: 'It’s live in Development. When you are confident, move it through Staging to Production.',
-      cta: 'Go to Release',
-      stage: 'release',
-      tone: 'accent'
-    };
-  }
-  return {
-    title: `${agent.name} is live — keep an eye on it`,
-    body: 'Check handover and cut-off rates since the last release, and turn bad calls into fixes.',
-    cta: 'Open Monitoring',
-    stage: 'monitor',
-    tone: 'accent'
-  };
 }

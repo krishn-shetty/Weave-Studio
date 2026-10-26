@@ -39,6 +39,10 @@ import {
 } from '../components/ui/accordion';
 import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { useDraftValidations } from '../hooks/useServerValidation';
+import { useAgentsReadiness } from '../hooks/useReadiness';
+import type { Readiness } from '../models/readiness';
+import { targetPath } from '../models/agentPages';
+import { ProgressRing } from '../components/agent/Readiness';
 import type { ValidationView } from '../utils/serverValidation';
 import { currentDeployments, draftChangeCount, environments, envShort, envLabel, latestVersion } from '../utils/agentStatus';
 import { missingSecrets } from '../utils/providerOptions';
@@ -106,6 +110,8 @@ export function Agents() {
   const secretKeys = useSecretKeys();
   // The server's checks on each saved draft (POST /validate); null while it has not answered.
   const validations = useDraftValidations(agents);
+  // Readiness per agent: the same model as the agent's header, Overview and Release.
+  const readinessById = useAgentsReadiness(agents);
   const rows = useMemo(
     () =>
       agents.map((a) => {
@@ -115,9 +121,9 @@ export function Agents() {
         const current = currentDeployments(a);
         const missing = report ? missingSecrets(report.secrets_required, secretKeys) : [];
         const isPinned = pinnedAgentIds.includes(a.id);
-        return { agent: a, report, checks, latest, current, missing, changes: draftChangeCount(a), isPinned };
+        return { agent: a, report, checks, latest, current, missing, changes: draftChangeCount(a), isPinned, readiness: readinessById[a.id]?.readiness };
       }),
-    [agents, pinnedAgentIds, secretKeys, validations]
+    [agents, pinnedAgentIds, secretKeys, validations, readinessById]
   );
 
   const filtered = useMemo(() => {
@@ -303,11 +309,12 @@ export function Agents() {
                 <th scope="col" className="px-4 py-2.5 font-medium">Draft</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Latest version</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Live in</th>
+                <th scope="col" className="px-4 py-2.5 font-medium">Next step</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">Last edited</th>
               </tr>
             </thead>
             <tbody>
-              {visible.map(({ agent, checks, latest, current, missing, changes, isPinned }) => (
+              {visible.map(({ agent, checks, latest, current, missing, changes, isPinned, readiness }) => (
                 <tr
                   key={agent.id}
                   onClick={() => navigate(`/agents/${agent.id}`)}
@@ -364,6 +371,9 @@ export function Agents() {
                         ))}
                       {Object.keys(current).length === 0 && <span className="text-muted">Nowhere yet</span>}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    {readiness && <NextStepCell agentId={agent.id} readiness={readiness} />}
                   </td>
                   <td className="px-4 py-3 text-[13px] text-muted">
                     {timeAgo(agent.draft.saved_at)}
@@ -481,7 +491,7 @@ export function Agents() {
               pageSizeOptions: [5, 10, 20, 50],
             }}
           >
-            {visible.map(({ agent, report, checks, latest, current, missing, changes, isPinned }, idx) => {
+            {visible.map(({ agent, report, checks, latest, current, missing, changes, isPinned, readiness }, idx) => {
               const isFirst = idx === 0;
               const isLast = idx === visible.length - 1;
 
@@ -527,6 +537,9 @@ export function Agents() {
                         )}
                         <div className="w-[96px] min-w-[96px] flex justify-center">
                           <ChecksBadge view={checks} className="w-full justify-center h-6" />
+                        </div>
+                        <div className="hidden min-w-[150px] xl:block">
+                          {readiness && <NextStepCell agentId={agent.id} readiness={readiness} />}
                         </div>
                         <div className="w-[100px] min-w-[100px] flex justify-center">
                           <Badge variant="outline" mono className="w-full justify-center h-6">
@@ -810,4 +823,25 @@ function ChecksBadge({ view, className }: { view: ValidationView | undefined; cl
   }
   if (view?.status === 'failed') return <Badge variant="warning" className={className} title={view.error ?? undefined}>Not checked</Badge>;
   return <Badge variant="neutral" className={className}>Checking…</Badge>;
+}
+
+/** How far an agent is from live, and its next step (the readiness model), as a link to where it is done. */
+function NextStepCell({ agentId, readiness }: { agentId: string; readiness: Readiness }) {
+  const next = readiness.next;
+  return (
+    <div className="flex items-center gap-2">
+      <ProgressRing done={readiness.done} total={readiness.total} size={22} />
+      {next ?
+      <Link
+        to={targetPath(agentId, next.target)}
+        onClick={(e) => e.stopPropagation()}
+        title={next.text}
+        className={cn('truncate text-[13px] font-medium hover:underline', next.state === 'blocked' ? 'text-danger' : 'text-accent')}>
+          {next.label}
+        </Link> :
+
+      <span className="text-[13px] font-medium text-success">Live</span>
+      }
+    </div>);
+
 }

@@ -21,13 +21,18 @@ import { settingsCatalog } from '../../../data/settingsCatalog';
 import { SettingField } from './SettingField';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
+/** The plain-language parts this view can show; a Build section shows the ones that belong to it. */
+export type GuidedPart = 'personality' | 'voice' | 'model' | 'tools' | 'channels' | 'records';
+
 interface GuidedViewProps {
+  parts?: GuidedPart[];
   editor: DraftEditor;
   onMore: (group: SettingGroupId) => void;
 }
 
 
-export function GuidedView({ editor, onMore }: GuidedViewProps) {
+export function GuidedView({ editor, onMore, parts }: GuidedViewProps) {
+  const show = (part: GuidedPart) => !parts || parts.includes(part);
   const { config, update, canEdit } = editor;
   // Field problems come from the server's report (none shown until it has answered).
   const validation = { errors: editor.validation?.errors ?? [], warnings: editor.validation?.warnings ?? [] };
@@ -65,6 +70,7 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
 
   return (
     <div>
+      {show('personality') &&
       <GuidedSection id="g-personality" title="Personality and instructions" description="Who the agent is and what it should do. This shapes every reply." onMore={() => onMore('about')}>
         <div className="grid gap-5 sm:grid-cols-2">
           <Field id={fieldId('persona.company')} label="Company name" error={err(['persona', 'company'])}>
@@ -101,7 +107,9 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           </Field>
         }
       </GuidedSection>
+      }
 
+      {show('voice') &&
       <GuidedSection id="g-voice" title="Voice and language" description="What callers hear on web voice and phone." onMore={() => onMore('talks')}>
         {setting('defaults.language.primary')}
         {(config.defaults?.language?.speaks?.length || config.defaults?.language?.auto_detect) &&
@@ -169,7 +177,9 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           }
         </Field>
       </GuidedSection>
+      }
 
+      {show('model') &&
       <GuidedSection id="g-model" title="AI model" description="The model that decides what to say. Bigger is smarter, slower and costs more." onMore={() => onMore('behaves')}>
         <Field
           id={fieldId('defaults.models.llm.model')}
@@ -222,7 +232,9 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           </div>
         </Field>
       </GuidedSection>
+      }
 
+      {show('tools') &&
       <GuidedSection id="g-tools" title="What it can do" description={`Actions ${entry?.name ?? 'the agent'} can take during a conversation.`} onMore={() => onMore('can_do')}>
         <div id={fieldId(toolsPath)} className="scroll-mt-28 rounded-md transition-[box-shadow] duration-200">
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
@@ -270,16 +282,21 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           </ul>
         </div>
       </GuidedSection>
+      }
 
+      {show('channels') &&
       <GuidedSection id="g-channels" title="Where it is available" description="Turn on the places people can reach this agent, each with its own greeting." onMore={() => onMore('available')}>
         <ChannelsEditor config={config} errors={validation.errors} disabled={disabled} update={update} />
       </GuidedSection>
+      }
 
+      {show('records') &&
       <GuidedSection id="g-records" title="Call records" description="What’s kept after each conversation. Transcripts may contain personal data." onMore={() => onMore('after')}>
         <div className="space-y-4">
           {['observability.session_log.enabled', 'post_call.recording.transcript', 'post_call.recording.audio', 'persona.disclosures.recording_notice', 'observability.session_log.retention_days'].map(setting)}
         </div>
       </GuidedSection>
+      }
     </div>);
 
 }

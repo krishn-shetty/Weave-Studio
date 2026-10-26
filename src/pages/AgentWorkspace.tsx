@@ -15,16 +15,22 @@ import { LeaveGuard } from '../components/agent/LeaveGuard';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Button } from '../components/ui/Button';
 import { useStudio } from '../contexts/StudioContext';
+import { useReadiness } from '../hooks/useReadiness';
+import { OverviewStage } from '../components/agent/OverviewStage';
+import { BUILD_SECTIONS, sectionOfPath, targetPath, type BuildSection } from '../models/agentPages';
 
-const stageIds: StageId[] = ['build', 'test', 'release', 'monitor'];
+const stageIds: StageId[] = ['overview', 'build', 'test', 'release', 'monitor'];
 
 export function AgentWorkspace() {
   const params = useParams();
   const agentId = params.agentId ?? '';
-  const stageParam = (params['*'] ?? '').split('/')[0] as StageId;
-  const stage: StageId = stageIds.includes(stageParam) ? stageParam : 'build';
+  const [stageParam, sectionParam] = (params['*'] ?? '').split('/') as [StageId, string | undefined];
+  const stage: StageId = stageIds.includes(stageParam) ? stageParam : 'overview';
+  const section: BuildSection = BUILD_SECTIONS.some((s) => s.id === sectionParam) ? (sectionParam as BuildSection) : 'agent';
   const navigate = useNavigate();
   const editor = useDraftEditor(agentId);
+  // One answer to "is it ready, what next?" for the header, Overview, Build's menu, Release and the bar below.
+  const readiness = useReadiness(editor);
   const { refreshAgent, loading } = useStudio();
   const [retrying, setRetrying] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
@@ -32,7 +38,7 @@ export function AgentWorkspace() {
 
   const goToField = useCallback(
     (path: Path) => {
-      navigate(`/agents/${agentId}/build`);
+      navigate(targetPath(agentId, { stage: 'build', section: sectionOfPath(path) ?? 'agent' }));
       setFocusRequest({ path, nonce: Date.now() });
     },
     [agentId, navigate]
@@ -82,16 +88,17 @@ export function AgentWorkspace() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <AgentHeader editor={editor} onPublish={openPublish} />
+      <AgentHeader editor={editor} onPublish={openPublish} readiness={readiness} stage={stage} />
       <div className="flex-1">
         <ErrorBoundary fallbackTitle="An error occurred in this workspace stage">
-          {stage === 'build' && <BuildStage editor={editor} focusRequest={focusRequest} />}
+          {stage === 'overview' && readiness && <OverviewStage editor={editor} state={readiness} onPublish={openPublish} />}
+          {stage === 'build' && <BuildStage editor={editor} section={section} readiness={readiness?.readiness ?? null} focusRequest={focusRequest} />}
           {stage === 'test' && <TestStage editor={editor} onGoToField={goToField} />}
-          {stage === 'release' && <ReleaseStage editor={editor} onPublish={openPublish} />}
+          {stage === 'release' && <ReleaseStage editor={editor} onPublish={openPublish} ship={readiness?.ship ?? null} />}
           {stage === 'monitor' && <MonitorStage editor={editor} />}
         </ErrorBoundary>
       </div>
-      <NextStepBar stage={stage} agentId={agentId} onPublish={openPublish} />
+      {readiness && <NextStepBar agentId={agentId} readiness={readiness.readiness} />}
       <ConflictDialog editor={editor} />
       <SaveFirstDialog editor={editor} />
       <LeaveGuard editor={editor} agentId={agentId} />

@@ -3,7 +3,6 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRightIcon,
   BotIcon,
-  CheckIcon,
   ExternalLinkIcon,
   HistoryIcon,
   ListIcon,
@@ -26,19 +25,12 @@ import {
 } from '../components/ui/accordion';
 import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { AuditTrailDialog } from '../components/ui/AuditTrailDialog';
-import { FirstRunChecklist } from '../components/home/FirstRunChecklist';
-import { currentDeployments, environments, envLabel, envShort, nextStep, pendingDeployment } from '../utils/agentStatus';
-import { useDraftValidations } from '../hooks/useServerValidation';
+import { currentDeployments, environments, envLabel, envShort, pendingDeployment } from '../utils/agentStatus';
+import { useAgentsReadiness } from '../hooks/useReadiness';
+import { ProgressRing, ReadinessChecklist, StepIcon } from '../components/agent/Readiness';
+import { targetPath } from '../models/agentPages';
 import { timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
-import type { StageId } from '../types/studio';
-
-const stages: { id: StageId; label: string }[] = [
-  { id: 'build', label: 'Build' },
-  { id: 'test', label: 'Test' },
-  { id: 'release', label: 'Release' },
-  { id: 'monitor', label: 'Monitor' },
-];
 
 const actionVerb = {
   created: 'created',
@@ -85,9 +77,8 @@ export function Home() {
     () => [...agents].sort((a, b) => new Date(b.draft.saved_at).getTime() - new Date(a.draft.saved_at).getTime())[0],
     [agents]
   );
-  const focusChecks = useDraftValidations(focus ? [focus] : []);
-  const step = focus ? nextStep(focus, focusChecks[focus.id]?.report ?? null) : null;
-  const stageIndex = step ? stages.findIndex((s) => s.id === step.stage) : 0;
+  // The same readiness model as the agent's own pages and the agent list.
+  const focusState = useAgentsReadiness(focus ? [focus] : [])[focus?.id ?? ''];
 
   const totalPages = Math.max(1, Math.ceil(liveAgents.length / livePageSize));
   const safePage = Math.min(livePage, totalPages);
@@ -123,58 +114,44 @@ export function Home() {
         )}
       </div>
 
-      {showChecklist && (
-        <div className="mt-6">
-          <FirstRunChecklist
-            onOpenCreate={() => setCreateOpen(true)}
-            onDismiss={handleDismissChecklist}
-          />
-        </div>
-      )}
-
-      {step && focus ? (
-        <section aria-labelledby="next-step" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel lg:p-8">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted">
-            <span>Next step</span>
-            <span aria-hidden>·</span>
-            <Link to={`/agents/${focus.id}`} className="font-medium text-ink hover:underline">
-              {focus.name}
-            </Link>
-            <span className="font-mono text-xs">{focus.id}</span>
-          </div>
-          <div className="mt-3 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div>
-              <h2 id="next-step" className="text-xl font-semibold tracking-tight text-ink">
-                {step.title}
-              </h2>
-              <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-soft">{step.body}</p>
-              <div className="mt-5 flex flex-wrap gap-2">
-                <Button variant={step.tone === 'danger' ? 'danger' : 'primary'} onClick={() => navigate(`/agents/${focus.id}/${step.stage}`)}>
-                  {step.cta}
-                  <ArrowRightIcon className="h-4 w-4" aria-hidden />
-                </Button>
+      {focus && focusState ? (
+        <section aria-labelledby="getting-started" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <ProgressRing done={focusState.readiness.done + 1} total={focusState.readiness.total + 1} size={48} />
+              <div>
+                <h2 id="getting-started" className="text-lg font-semibold tracking-tight text-ink">Getting started</h2>
+                <p className="mt-0.5 text-[13px] text-muted">
+                  Your most recently edited agent:{' '}
+                  <Link to={`/agents/${focus.id}`} className="font-medium text-ink hover:underline">{focus.name}</Link>{' '}
+                  <span className="font-mono text-xs">{focus.id}</span>
+                </p>
               </div>
             </div>
-            <ol className="flex items-center gap-1.5" aria-label="Where this agent is in the journey">
-              {stages.map((s, i) => (
-                <li key={s.id} className="flex items-center gap-1.5">
-                  <span
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
-                      i < stageIndex && 'bg-success-soft text-success',
-                      i === stageIndex && 'bg-ink text-white',
-                      i > stageIndex && 'bg-subtle text-muted'
-                    )}
-                    aria-current={i === stageIndex ? 'step' : undefined}
-                  >
-                    {i < stageIndex && <CheckIcon className="h-3 w-3" aria-hidden />}
-                    {s.label}
-                  </span>
-                  {i < stages.length - 1 && <span className="h-px w-3 bg-line-strong" aria-hidden />}
-                </li>
-              ))}
-            </ol>
+            {focusState.readiness.next ?
+            <Button
+              variant={focusState.readiness.next.state === 'blocked' ? 'danger' : 'primary'}
+              onClick={() => focusState.readiness.next && navigate(targetPath(focus.id, focusState.readiness.next.target))}>
+                Next: {focusState.readiness.next.label}
+                <ArrowRightIcon className="h-4 w-4" aria-hidden />
+              </Button> :
+            <span className="text-sm font-medium text-success">{focus.name} is ready and live</span>}
           </div>
+          {showChecklist ?
+          <div className="mt-5 space-y-2">
+              <div className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-2.5">
+                <StepIcon state="done" />
+                <p className="flex-1 text-sm font-medium text-ink">Create an agent</p>
+              </div>
+              <ReadinessChecklist agentId={focus.id} readiness={focusState.readiness} compact />
+              <button type="button" onClick={handleDismissChecklist} className="text-xs font-medium text-muted hover:text-ink hover:underline">
+                Hide the steps
+              </button>
+            </div> :
+          <button type="button" onClick={handleReopenChecklist} className="mt-4 text-xs font-medium text-accent hover:underline">
+              Show every step
+            </button>
+          }
         </section>
       ) : (
         <section className="mt-6 rounded-xl border border-line bg-surface p-8 shadow-panel">

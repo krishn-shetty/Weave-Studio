@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { expectationLabel, readableId, runCounts, runNotes } from './testRuns';
+import type { TestRun } from '../api/types';
+import { expectationLabel, latestDraftRun, readableId, runCounts, runNotes } from './testRuns';
 
 describe('readableId', () => {
   it('turns an id into words', () => {
@@ -45,5 +46,37 @@ describe('runNotes', () => {
         ],
       })
     ).toEqual([live, 'tool lookup timed out']);
+  });
+});
+
+describe('latestDraftRun: the newest finished run of the saved draft', () => {
+  const run = (over: Partial<TestRun>): TestRun => ({ run_id: 'r', status: 'passed', started_at: '2026-10-22T12:00:00+00:00', ref: 'draft', total: 2, counts: { passed: 2 }, ...over });
+
+  it('none: null (never run)', () => {
+    expect(latestDraftRun([])).toBeNull();
+  });
+
+  it('takes the newest finished draft run, whatever order the list is in', () => {
+    const r = latestDraftRun([
+      run({ run_id: 'old', started_at: '2026-10-20T10:00:00+00:00', status: 'failed', counts: { passed: 1 } }),
+      run({ run_id: 'new', started_at: '2026-10-22T10:00:00+00:00' }),
+    ]);
+    expect(r).toEqual({ status: 'passed', passed: 2, total: 2, startedAt: '2026-10-22T10:00:00+00:00' });
+  });
+
+  it('skips a run still going, a run of unsaved editor contents and a run of a version', () => {
+    const r = latestDraftRun([
+      run({ status: 'running', started_at: '2026-10-23T10:00:00+00:00' }),
+      run({ ref: 'unsaved', started_at: '2026-10-23T09:00:00+00:00' }),
+      run({ ref: '0.1.0', started_at: '2026-10-23T08:00:00+00:00' }),
+      run({ status: 'failed', counts: { passed: 1, failed: 1 }, started_at: '2026-10-21T10:00:00+00:00' }),
+    ]);
+    expect(r?.status).toBe('failed');
+    expect(r?.passed).toBe(1);
+  });
+
+  it('keeps error and skipped as the server says them', () => {
+    expect(latestDraftRun([run({ status: 'error', counts: {} })])?.status).toBe('error');
+    expect(latestDraftRun([run({ status: 'skipped', counts: { skipped: 2 } })])).toMatchObject({ status: 'skipped', passed: 0, total: 2 });
   });
 });
