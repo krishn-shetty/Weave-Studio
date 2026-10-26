@@ -1,7 +1,7 @@
-import type { AgentConfig } from '../types/studio';
+import type { AgentConfig, Path } from '../types/studio';
 import type { ProvidersAnswer } from '../api/types';
 import type { SettingDef } from '../data/settingsCatalog';
-import { languages, llmProviders, sttProviders, type ProviderOption } from '../data/providers';
+import { languages, llmProviders, sttProviders, ttsProviders, type ProviderOption } from '../data/providers';
 import { VOICE_CATALOG } from '../data/voiceCatalog';
 import { missingProviderKey as providerKeyMissing, providersFor, voicesFor } from './providerOptions';
 
@@ -38,6 +38,8 @@ export function resolveOptions(def: SettingDef, config: AgentConfig, providers: 
       return modelsOf(sttProviders, models?.stt?.provider);
     case 'tts_providers':
       return providerOptions('tts', providers, models?.tts?.provider);
+    case 'tts_models':
+      return modelsOf(ttsProviders, models?.tts?.provider);
     case 'tts_voices':
       return voicesFor(models?.tts?.provider, VOICE_CATALOG).map((v) => ({ value: v.voiceId, label: `${v.name} — ${v.style}, ${v.language}` }));
     case 'agents':
@@ -47,11 +49,23 @@ export function resolveOptions(def: SettingDef, config: AgentConfig, providers: 
   }
 }
 
-// When a provider changes, its model/voice must change with it.
-export const providerFollowUps: Record<string, {first: (provider: string) => string | undefined;sibling: string;}> = {
-  'defaults.models.llm.provider': { first: (p) => llmProviders.find((x) => x.id === p)?.models[0]?.id, sibling: 'defaults.models.llm.model' },
-  'defaults.models.stt.provider': { first: (p) => sttProviders.find((x) => x.id === p)?.models[0]?.id, sibling: 'defaults.models.stt.model' },
-  'defaults.models.tts.provider': { first: firstVoiceOf, sibling: 'defaults.models.tts.voice' }
+const firstModelOf = (list: ProviderOption[], provider: string): string | undefined => list.find((x) => x.id === provider)?.models[0]?.id;
+
+type Update = (path: Path, value: unknown) => void;
+
+/**
+ * When a provider changes, the model (and for speech the voice) of the old provider no longer applies: they change to
+ * the catalogue's first suggestion for the new provider, or are cleared when there is none (the field then asks for one).
+ */
+export const providerFollowUps: Record<string, {apply: (provider: string, update: Update) => void;}> = {
+  'defaults.models.llm.provider': { apply: (p, update) => update(['defaults', 'models', 'llm', 'model'], firstModelOf(llmProviders, p)) },
+  'defaults.models.stt.provider': { apply: (p, update) => update(['defaults', 'models', 'stt', 'model'], firstModelOf(sttProviders, p)) },
+  'defaults.models.tts.provider': {
+    apply: (p, update) => {
+      update(['defaults', 'models', 'tts', 'model'], firstModelOf(ttsProviders, p));
+      update(['defaults', 'models', 'tts', 'voice_id'], firstVoiceOf(p));
+    }
+  }
 };
 
 /** The secret a provider setting needs when the server says it is not set, else null. */

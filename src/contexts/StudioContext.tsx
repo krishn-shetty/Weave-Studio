@@ -14,7 +14,7 @@ import type {
 } from '../types/studio';
 import { starters } from '../data/starters';
 import { useAuth } from './AuthContext';
-import { buildConfig, normalizeConfig } from '../utils/configFactory';
+import { applyStarter } from '../utils/configFactory';
 import { validateConfig } from '../utils/validate';
 import { randomHex } from '../utils/format';
 import { currentDeployments } from '../utils/agentStatus';
@@ -89,7 +89,7 @@ const emptyDraft = (summary: BotSummary): Draft => ({
   revision: summary.draft_revision ?? 0,
   saved_at: summary.draft_saved_at ?? '',
   saved_by: '',
-  config: normalizeConfig(null),
+  config: {},
 });
 
 interface StudioProviderProps {
@@ -224,7 +224,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
           revision: draftRes.value.revision,
           saved_at: draftRes.value.saved_at,
           saved_by: draftRes.value.saved_by || 'Unknown',
-          config: normalizeConfig(draftRes.value.config as AgentConfig),
+          config: draftRes.value.config as AgentConfig,
         };
       } else {
         // No invented config: the agent says it could not be loaded and is not editable until it is.
@@ -247,7 +247,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       if (versions[0]) {
         try {
           const newest = await api.getVersion(summary.id, versions[0].version);
-          versions[0] = { ...versions[0], config: normalizeConfig(newest.config as AgentConfig) };
+          versions[0] = { ...versions[0], config: newest.config as AgentConfig };
         } catch {
           // Leave it unloaded: counts of unpublished changes then say they could not be counted.
         }
@@ -381,25 +381,26 @@ export function StudioProvider({ children }: StudioProviderProps) {
   const createAgent = useCallback(
     async ({ id, name, company, starterId }: CreateInput): Promise<Agent> => {
       const starter = starters.find((s) => s.id === starterId) ?? starters[0];
-      const initialConfig = buildConfig({ id, name, company, starter });
 
-      // Call real backend API to create bot
-      await api.createBot({ id, name });
-
-      // Save initial config as draft
-      const saveRes = await api.saveDraft(id, initialConfig, null);
+      // The server makes the agent with a minimal valid draft; a starter (other than Blank) is laid on top of it.
+      const created = await api.createBot({ id, name });
+      let draft: Draft = {
+        bot_id: id,
+        revision: created.revision,
+        saved_at: created.saved_at,
+        saved_by: created.saved_by,
+        config: created.config as AgentConfig,
+      };
+      if (starter.id !== 'blank') {
+        const saved = await api.saveDraft(id, applyStarter(draft.config, { company, starter }), created.revision);
+        draft = { bot_id: id, revision: saved.draft.revision, saved_at: saved.draft.saved_at, saved_by: saved.draft.saved_by, config: saved.draft.config as AgentConfig };
+      }
 
       const agent: Agent = {
         id,
         name,
         starter: starter.id,
-        draft: {
-          bot_id: id,
-          revision: saveRes.draft.revision,
-          saved_at: saveRes.draft.saved_at,
-          saved_by: saveRes.draft.saved_by,
-          config: initialConfig,
-        },
+        draft,
         versions: [],
         deployments: [],
       };
@@ -544,7 +545,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       const cached = agent?.versions.find((v) => v.version === version)?.config;
       if (cached) return cached;
       const res = await api.getVersion(agentId, version);
-      const config = normalizeConfig(res.config as AgentConfig);
+      const config = res.config as AgentConfig;
       updateAgent(agentId, (a) => ({
         ...a,
         versions: a.versions.map((v) => (v.version === version ? { ...v, config } : v)),

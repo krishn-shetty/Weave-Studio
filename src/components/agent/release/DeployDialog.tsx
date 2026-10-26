@@ -83,9 +83,9 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   report.unsupported.length ?
   { ok: false, title: 'Uses features that aren’t available yet', detail: report.unsupported.map((u) => `${u.feature} (${u.where})`).join('; ') } :
   { ok: true, title: 'Everything in this version can run' },
-  vConfig.post_call?.recording && !vConfig.persona?.recording_notice ?
-  { ok: false, title: 'Calls are recorded but callers aren’t told', detail: 'Turn on the recording notice unless you are sure it isn’t required.' } :
-  { ok: true, title: vConfig.persona?.recording_notice ? 'Callers are told they may be recorded' : 'Calls aren’t recorded' }] :
+  vConfig.post_call?.recording?.audio === true && !vConfig.persona?.disclosures?.recording_notice ?
+  { ok: false, title: 'Calls are recorded but callers aren’t told', detail: 'Add what callers hear about recording unless you are sure it isn’t required.' } :
+  { ok: true, title: vConfig.post_call?.recording?.audio === true ? 'Callers are told they may be recorded' : 'Audio isn’t recorded' }] :
 
   [];
 

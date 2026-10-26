@@ -8,21 +8,9 @@ import { checkJson } from '../../../utils/jsonCheck';
 import { cn } from '../../../utils/styles';
 
 const LINE_HEIGHT = 20;
-const REQUIRED_SECTIONS = ['meta', 'persona', 'defaults', 'channels', 'agents', 'tools', 'post_call', 'observability', 'runtime'];
-
-function missingSections(obj: Record<string, unknown>): string | null {
-  const missing = REQUIRED_SECTIONS.filter((k) => typeof obj[k] !== 'object' || obj[k] === null);
-  if (missing.length) return `Missing section${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. Every agent needs these.`;
-  const defaults = obj.defaults as Record<string, unknown>;
-  const agents = obj.agents as Record<string, unknown>;
-  if (typeof defaults.models !== 'object' || defaults.models === null) return 'defaults.models is missing.';
-  const models = defaults.models as Record<string, unknown>;
-  const missingModel = ['llm', 'stt', 'tts'].find((k) => typeof models[k] !== 'object' || models[k] === null);
-  if (missingModel) return `defaults.models.${missingModel} is missing.`;
-  if (typeof defaults.conversation !== 'object' || defaults.conversation === null) return 'defaults.conversation is missing.';
-  if (!Array.isArray(agents.items)) return 'agents.items must be a list.';
-  if (!Array.isArray(obj.channels) || !Array.isArray(obj.tools)) return 'channels and tools must be lists.';
-  return null;
+// Only whether the text is a JSON object is checked here. What a config must contain is the server's to say (POST /validate).
+function notAnObject(value: unknown): string | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) ? null : 'The configuration must be a JSON object ({ … }).';
 }
 
 export function JsonView({ editor }: {editor: DraftEditor;}) {
@@ -49,7 +37,7 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
         setProblem({ message: result.message, line: result.line });
         return;
       }
-      const shapeProblem = missingSections(result.value as Record<string, unknown>);
+      const shapeProblem = notAnObject(result.value);
       if (shapeProblem) {
         setProblem({ message: shapeProblem, line: null });
         return;

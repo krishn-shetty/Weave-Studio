@@ -78,10 +78,22 @@ export const sttProviders: ProviderOption[] = [
 }];
 
 
-// Voices are not listed here: see voiceCatalog.ts.
+// Voices are not listed here: see voiceCatalog.ts. The server requires a text-to-speech model with the provider.
 export const ttsProviders: ProviderOption[] = [
-{ id: 'cartesia', label: 'Cartesia', secret: 'CARTESIA_API_KEY', models: [] },
-{ id: 'elevenlabs', label: 'ElevenLabs', secret: 'ELEVEN_API_KEY', models: [] }];
+{
+  id: 'cartesia',
+  label: 'Cartesia',
+  secret: 'CARTESIA_API_KEY',
+  models: [{ id: 'sonic-3', label: 'Sonic 3' }, { id: 'sonic-2', label: 'Sonic 2' }]
+},
+{
+  id: 'elevenlabs',
+  label: 'ElevenLabs',
+  secret: 'ELEVEN_API_KEY',
+  models: [
+  { id: 'eleven_flash_v2_5', label: 'Flash v2.5', note: 'Lowest latency.' },
+  { id: 'eleven_multilingual_v2', label: 'Multilingual v2', note: 'Most natural, slower.' }]
+}];
 
 
 export const languages = [

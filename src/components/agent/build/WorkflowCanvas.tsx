@@ -108,7 +108,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
-              {config.channels.map((ch) => {
+              {(config.channels ?? []).map((ch) => {
                 const isSelected = selectedNodeId === `channel-${ch.id}`;
                 return (
                   <div
@@ -127,7 +127,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                       <div className="flex items-center gap-2 font-medium text-ink text-sm">
                         {ch.type === 'web_chat' && <GlobeIcon className="h-4 w-4 text-accent" />}
                         {ch.type === 'web_voice' && <RadioIcon className="h-4 w-4 text-success" />}
-                        {ch.type === 'phone' && <PhoneIcon className="h-4 w-4 text-info" />}
+                        {ch.type === 'sip_voice' && <PhoneIcon className="h-4 w-4 text-info" />}
                         <span className="capitalize">{ch.type.replace('_', ' ')}</span>
                       </div>
                       <StatusChip tone={ch.enabled ? 'success' : 'neutral'} dot={ch.enabled}>
@@ -146,7 +146,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            const idx = config.channels.findIndex((c) => c.id === ch.id);
+                            const idx = (config.channels ?? []).findIndex((c) => c.id === ch.id);
                             if (idx !== -1) update(['channels', idx, 'enabled'], !ch.enabled);
                           }}
                           className="font-medium text-accent hover:underline"
@@ -204,18 +204,18 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                   <div className="mt-3.5 space-y-2 text-xs text-ink-soft">
                     <div>
                       <span className="font-semibold text-muted">Spoken Persona:</span>{' '}
-                      <span className="font-medium text-ink">{config.persona.name} ({config.persona.tone} tone)</span>
+                      <span className="font-medium text-ink">{config.persona?.name ?? 'No name set'}{config.persona?.tone ? ` (${config.persona.tone} tone)` : ''}</span>
                     </div>
                     <div>
                       <span className="font-semibold text-muted">Core Directives:</span>
                       <p className="mt-1 line-clamp-3 leading-relaxed text-muted font-sans">
-                        {getInstructionsText(entryAgent.instructions) || 'Assist customer and route queries.'}
+                        {getInstructionsText(entryAgent.instructions) || 'No instructions yet.'}
                       </p>
                     </div>
                     <div>
                       <span className="font-semibold text-muted">Assigned Tools:</span>{' '}
                       <span className="font-mono text-ink font-medium">
-                        {entryAgent.tools.join(', ') || 'None'}
+                        {(entryAgent.tools ?? []).join(', ') || 'None'}
                       </span>
                     </div>
                   </div>
@@ -248,7 +248,7 @@ export function WorkflowCanvas({ editor, onGoToDetailedGroup }: WorkflowCanvasPr
                             <p className="font-medium text-ink">{sa.name}</p>
                             <p className="font-mono text-[11px] text-muted">{sa.id}</p>
                           </div>
-                          <span className="text-muted font-mono">{sa.tools.length} tools</span>
+                          <span className="text-muted font-mono">{(sa.tools ?? []).length} tools</span>
                         </div>
                       ))
                     )}

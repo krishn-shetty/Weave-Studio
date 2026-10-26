@@ -31,7 +31,7 @@ export function AgentRolesEditor({ config, errors, warnings, disabled, technical
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="text-sm font-semibold text-ink">{technical ? <code className="font-mono">agents.items[{i}]</code> : role.name}</h4>
               <code className="font-mono text-xs text-muted">{role.id}</code>
-              {config.agents.entry === role.id && <StatusChip tone="accent">Answers first</StatusChip>}
+              {config.agents?.entry === role.id && <StatusChip tone="accent">Answers first</StatusChip>}
             </div>
             <div className="mt-3 grid gap-4">
               <div id={fieldId([...base, 'name'])}>
@@ -61,14 +61,14 @@ export function AgentRolesEditor({ config, errors, warnings, disabled, technical
                 <p className="text-[13px] font-medium text-ink-soft">Tools this role can use</p>
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {toolIds.map((t) => {
-                    const on = role.tools.includes(t);
+                    const on = (role.tools ?? []).includes(t);
                     return (
                       <button
                         key={t}
                         type="button"
                         aria-pressed={on}
                         disabled={disabled}
-                        onClick={() => update(toolsPath, on ? role.tools.filter((x) => x !== t) : [...role.tools, t])}
+                        onClick={() => update(toolsPath, on ? (role.tools ?? []).filter((x) => x !== t) : [...(role.tools ?? []), t])}
                         className={cn(
                           'rounded-md border px-2 py-1 font-mono text-xs transition-[background-color,border-color,color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60',
                           on ? 'border-accent/40 bg-accent-soft text-accent' : 'border-line text-muted hover:border-line-strong hover:text-ink'
@@ -85,7 +85,7 @@ export function AgentRolesEditor({ config, errors, warnings, disabled, technical
                       type="button"
                       disabled={disabled}
                       aria-label={`Remove ${t}`}
-                      onClick={() => update(toolsPath, role.tools.filter((x) => x !== t))}
+                      onClick={() => update(toolsPath, (role.tools ?? []).filter((x) => x !== t))}
                       className="rounded p-0.5 hover:bg-danger/10">
                       
                         <XIcon className="h-3 w-3" aria-hidden />

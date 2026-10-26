@@ -1,7 +1,6 @@
 import React from 'react';
 import type { AgentConfig, ChannelType, Issue, Path } from '../../../types/studio';
 import { Toggle } from '../../ui/Toggle';
-import { StatusChip } from '../../ui/StatusChip';
 import { fieldId } from '../../../utils/path';
 import { channelLabel, getGreetingText, issuesAt } from '../../../utils/validate';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
@@ -17,7 +16,11 @@ interface ChannelsEditorProps {
 const descriptions: Record<ChannelType, string> = {
   web_chat: 'A chat box on your website. Text in, text out.',
   web_voice: 'A talk button on your website. Uses the voice you picked.',
-  phone: 'Callers ring a phone number. Needs a number set up by your admin.'
+  sip_voice: 'Callers ring a phone number. Numbers are managed in Library › Numbers.',
+  whatsapp: 'Messages on WhatsApp.',
+  sms: 'Text messages.',
+  email: 'Email.',
+  custom: 'A channel your own system connects.'
 };
 
 export function ChannelsEditor({ config, errors, disabled, technical, update }: ChannelsEditorProps) {
@@ -32,7 +35,6 @@ export function ChannelsEditor({ config, errors, disabled, technical, update }: 
               <div>
                 <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
                   {technical ? <code className="font-mono text-[13px]">channels[{i}] · {ch.id}</code> : channelLabel(ch.type)}
-                  {ch.type === 'phone' && <StatusChip>Number setup not in Studio yet</StatusChip>}
                 </p>
                 <p className="mt-0.5 text-[13px] text-muted">{descriptions[ch.type]}</p>
               </div>

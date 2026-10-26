@@ -1,4 +1,6 @@
-export type SettingType = 'text' | 'textarea' | 'select' | 'toggle' | 'number';
+// Every path is a real config path from GET /schema: what a form writes is exactly what the JSON view shows.
+// 'lines' edits a list of strings, one per line.
+export type SettingType = 'text' | 'textarea' | 'lines' | 'select' | 'toggle' | 'number';
 export type SettingLevel = 'guided' | 'detailed' | 'expert';
 export type OptionsSource =
 'languages' |
@@ -7,6 +9,7 @@ export type OptionsSource =
 'stt_providers' |
 'stt_models' |
 'tts_providers' |
+'tts_models' |
 'tts_voices' |
 'agents';
 export type SettingGroupId = 'about' | 'talks' | 'can_do' | 'behaves' | 'available' | 'after' | 'records' | 'engine';
@@ -63,30 +66,34 @@ export const settingsCatalog: SettingDef[] = [
   { value: 'upbeat', label: 'Upbeat' }]
 
 },
-{ path: 'persona.rules', label: 'Rules for every role', help: 'Instructions every role follows, whoever is talking.', group: 'about', type: 'textarea', level: 'detailed' },
+{ path: 'persona.shared_rules', label: 'Rules for every role', help: 'Instructions every role follows, whoever is talking. One rule per line.', group: 'about', type: 'lines', level: 'detailed' },
+{ path: 'persona.style_rules', label: 'How it speaks', help: 'Style rules, for example “One question at a time.” One per line.', group: 'about', type: 'lines', level: 'detailed' },
 
-{ path: 'defaults.language', label: 'Language', help: 'The language the agent listens and speaks in.', group: 'talks', type: 'select', level: 'guided', optionsFrom: 'languages' },
+{ path: 'defaults.language.primary', label: 'Language', help: 'The language the agent listens and speaks in.', group: 'talks', type: 'select', level: 'guided', optionsFrom: 'languages' },
 { path: 'defaults.models.tts.provider', label: 'Voice provider', help: 'Who generates the spoken voice.', group: 'talks', type: 'select', level: 'guided', optionsFrom: 'tts_providers' },
-{ path: 'defaults.models.tts.voice', label: 'Voice', help: 'What callers hear on phone and web voice.', group: 'talks', type: 'select', level: 'guided', optionsFrom: 'tts_voices' },
-{ path: 'defaults.conversation.allow_interruptions', label: 'Let callers interrupt', help: 'When on, the agent stops talking as soon as the caller speaks.', group: 'talks', type: 'toggle', level: 'detailed' },
-{ path: 'defaults.conversation.inactivity_timeout_s', label: 'Silence before checking in', help: 'How long the agent waits in silence before asking if the caller is still there.', group: 'talks', type: 'number', level: 'detailed', unit: 'seconds', min: 5, max: 120 },
+{ path: 'defaults.models.tts.model', label: 'Voice model', help: 'The provider’s speech model. The server needs one whenever a voice provider is set.', group: 'talks', type: 'select', level: 'detailed', optionsFrom: 'tts_models' },
+{ path: 'defaults.models.tts.voice_id', label: 'Voice', help: 'What callers hear on phone and web voice.', group: 'talks', type: 'select', level: 'guided', optionsFrom: 'tts_voices' },
+{ path: 'defaults.conversation.turn_handling.interruption.enabled', label: 'Let callers interrupt', help: 'When on, the agent stops talking as soon as the caller speaks.', group: 'talks', type: 'toggle', level: 'detailed' },
+{ path: 'defaults.conversation.inactivity.timeout_s', label: 'Silence before checking in', help: 'How long the agent waits in silence before asking if the caller is still there.', group: 'talks', type: 'number', level: 'detailed', unit: 'seconds', min: 1, max: 600 },
 
 { path: 'defaults.models.llm.provider', label: 'AI model provider', help: 'Who runs the language model that decides what to say.', group: 'behaves', type: 'select', level: 'guided', optionsFrom: 'llm_providers' },
 { path: 'defaults.models.llm.model', label: 'AI model', help: 'Bigger models reason better but cost more and respond slower.', group: 'behaves', type: 'select', level: 'guided', optionsFrom: 'llm_models' },
 { path: 'agents.entry', label: 'Who answers first', help: 'The role that greets every caller.', group: 'behaves', type: 'select', level: 'detailed', optionsFrom: 'agents' },
 
-{ path: 'post_call.summary', label: 'Write a summary after each call', help: 'A short summary appears on the call record.', group: 'after', type: 'toggle', level: 'detailed' },
-{ path: 'post_call.recording', label: 'Record audio', help: 'Keeps an audio recording of phone and voice calls.', group: 'after', type: 'toggle', level: 'guided' },
-{ path: 'persona.recording_notice', label: 'Tell callers they may be recorded', help: 'Adds a recording notice to the greeting. Required in many regions.', group: 'after', type: 'toggle', level: 'guided' },
-{ path: 'post_call.redact_pii', label: 'Hide personal details in transcripts', help: 'Masks card numbers, phone numbers and emails before storing.', group: 'after', type: 'toggle', level: 'detailed' },
+{ path: 'post_call.summary.enabled', label: 'Write a summary after each call', help: 'A short summary appears on the call record.', group: 'after', type: 'toggle', level: 'detailed' },
+{ path: 'post_call.recording.audio', label: 'Record audio', help: 'Keeps an audio recording of phone and voice calls.', group: 'after', type: 'toggle', level: 'guided' },
+{ path: 'post_call.recording.transcript', label: 'Keep transcripts', help: 'The written conversation, kept with the call.', group: 'after', type: 'toggle', level: 'guided' },
+{ path: 'post_call.recording.retention_days', label: 'Keep recordings and transcripts for', help: 'After this, the recording and transcript are deleted.', group: 'after', type: 'number', level: 'detailed', unit: 'days', min: 1, max: 3650 },
+{ path: 'persona.disclosures.recording_notice', label: 'What callers hear about recording', help: 'Said at the start of the call. Leave empty to say nothing.', group: 'after', type: 'text', level: 'guided' },
+{ path: 'post_call.redaction.enabled', label: 'Hide personal details in what is kept', help: 'Masks the details listed under redaction before storing.', group: 'after', type: 'toggle', level: 'detailed' },
 
-{ path: 'observability.store_transcripts', label: 'Keep transcripts', help: 'Needed to review calls in Studio.', group: 'records', type: 'toggle', level: 'guided' },
-{ path: 'observability.retention_days', label: 'Keep call records for', help: 'After this, transcripts and recordings are deleted.', group: 'records', type: 'number', level: 'guided', unit: 'days', min: 1, max: 730 },
+{ path: 'observability.session_log.enabled', label: 'Keep a log of each call', help: 'What was said, each tool used and every error. Needed to review calls in Studio.', group: 'records', type: 'toggle', level: 'guided' },
+{ path: 'observability.session_log.retention_days', label: 'Keep call logs for', help: 'After this, the call logs are deleted.', group: 'records', type: 'number', level: 'guided', unit: 'days', min: 1, max: 3650 },
 
 { path: 'defaults.models.stt.provider', label: 'Speech recognition provider', help: 'Turns caller audio into text.', group: 'engine', type: 'select', level: 'expert', optionsFrom: 'stt_providers' },
 { path: 'defaults.models.stt.model', label: 'Speech recognition model', help: 'Model used for transcription.', group: 'engine', type: 'select', level: 'expert', optionsFrom: 'stt_models' },
 {
-  path: 'runtime.mode',
+  path: 'runtime.provider_mode',
   label: 'Provider mode',
   help: 'Plugins call providers directly; inference routes through the LiveKit gateway.',
   group: 'engine',

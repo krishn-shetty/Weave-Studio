@@ -166,7 +166,7 @@ export function ImportExportModal({ open, onClose, agent, currentConfig, onConfi
               <div className="grid grid-cols-2 gap-2 text-muted">
                 <div>Bot ID: <code className="font-mono text-ink">{agent.id}</code></div>
                 <div>Revision: <code className="font-mono text-ink">rev {agent.draft.revision}</code></div>
-                <div>Version: <code className="font-mono text-ink">{currentConfig.meta.version}</code></div>
+                <div>Version: <code className="font-mono text-ink">{currentConfig.meta?.version ?? 'not set'}</code></div>
                 <div>Size: <code className="font-mono text-ink">~{(JSON.stringify(currentConfig).length / 1024).toFixed(1)} KB</code></div>
               </div>
               <p className="pt-2 text-muted border-t border-line">

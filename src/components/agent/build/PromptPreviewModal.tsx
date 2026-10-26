@@ -20,7 +20,7 @@ interface PromptPreviewModalProps {
  * unsaved edits included. Channel, agent and time are what-ifs.
  */
 export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModalProps) {
-  const channels = config.channels.filter((c) => c.enabled);
+  const channels = (config.channels ?? []).filter((c) => c.enabled);
   const agents = config.agents?.items ?? [];
   const [channelId, setChannelId] = useState('');
   const [agentId, setAgentId] = useState('');

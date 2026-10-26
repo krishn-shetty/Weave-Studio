@@ -4,7 +4,7 @@ import type { SettingDef } from '../../../data/settingsCatalog';
 import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { fieldId, getAt, parsePath } from '../../../utils/path';
-import { getLanguageCode, issuesAt } from '../../../utils/validate';
+import { issuesAt } from '../../../utils/validate';
 import { missingProviderKey, providerFollowUps, resolveOptions } from '../../../utils/settingOptions';
 import { useProviders } from '../../../hooks/useProviders';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
@@ -21,23 +21,18 @@ interface SettingFieldProps {
 
 const PROVIDER_SOURCES = ['llm_providers', 'stt_providers', 'tts_providers'];
 
+/** What a setting that is not in the config shows: the server decides its value. */
+export const SERVER_DEFAULT = 'Server’s default';
+
+/**
+ * One setting, read from and written to its real config path (def.path) and nothing else. A setting that is not set
+ * shows "Server's default"; clearing it removes the key, so the server's default applies again.
+ */
 export function SettingField({ def, config, errors, warnings, technical, disabled, update }: SettingFieldProps) {
   const { answer: providers, error: providersError } = useProviders();
   const path = parsePath(def.path);
-  let value = getAt(config, path);
-  if (def.path === 'post_call.recording' && typeof value === 'object' && value !== null) {
-    value = (value as any).audio;
-  } else if (def.path === 'post_call.summary' && typeof value === 'object' && value !== null) {
-    value = (value as any).enabled;
-  } else if (def.path === 'persona.recording_notice') {
-    value = Boolean(config.persona?.disclosures?.recording_notice ?? config.persona?.recording_notice);
-  } else if (def.path === 'defaults.models.tts.voice') {
-    value = config.defaults?.models?.tts?.voice ?? config.defaults?.models?.tts?.voice_id;
-  } else if (def.path === 'observability.retention_days') {
-    value = config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90;
-  } else if (def.path === 'runtime.mode') {
-    value = config.runtime?.provider_mode ?? config.runtime?.mode ?? 'plugins';
-  }
+  const value = getAt(config, path);
+  const unset = value === undefined;
 
   const id = fieldId(def.path);
   const inputId = `${id}-input`;
@@ -49,53 +44,18 @@ export function SettingField({ def, config, errors, warnings, technical, disable
 
   const onChange = (v: unknown) => {
     update(path, v);
-    if (def.path === 'defaults.models.tts.voice') {
-      update(['defaults', 'models', 'tts', 'voice_id'], v);
-    } else if (def.path === 'post_call.recording') {
-      if (typeof config.post_call?.recording === 'object') {
-        update(['post_call', 'recording'], { ...config.post_call.recording, audio: Boolean(v) });
-      } else {
-        update(['post_call', 'recording'], { audio: Boolean(v), transcript: true });
-      }
-    } else if (def.path === 'post_call.summary') {
-      if (typeof config.post_call?.summary === 'object') {
-        update(['post_call', 'summary'], { ...config.post_call.summary, enabled: Boolean(v) });
-      } else {
-        update(['post_call', 'summary'], { enabled: Boolean(v) });
-      }
-    } else if (def.path === 'persona.recording_notice') {
-      if (v) {
-        update(['persona', 'disclosures'], {
-          ...(config.persona?.disclosures || {}),
-          recording_notice:
-            typeof config.persona?.disclosures?.recording_notice === 'string'
-              ? config.persona.disclosures.recording_notice
-              : 'This call may be recorded.',
-        });
-      } else {
-        const disc = { ...(config.persona?.disclosures || {}) };
-        delete disc.recording_notice;
-        update(['persona', 'disclosures'], disc);
-      }
-    } else if (def.path === 'observability.retention_days') {
-      if (config.observability?.session_log) {
-        update(['observability', 'session_log'], { ...config.observability.session_log, retention_days: Number(v) });
-      }
-    } else if (def.path === 'runtime.mode') {
-      update(['runtime', 'provider_mode'], v);
-    }
-
     const follow = providerFollowUps[def.path];
-    if (follow) {
-      const first = follow.first(String(v));
-      if (first) {
-        update(parsePath(follow.sibling), first);
-        if (follow.sibling === 'defaults.models.tts.voice') {
-          update(['defaults', 'models', 'tts', 'voice_id'], first);
-        }
-      }
-    }
+    if (follow && typeof v === 'string') follow.apply(v, update);
   };
+
+  const resetLink = !unset && !disabled && (
+    <button
+      type="button"
+      onClick={() => update(path, undefined)}
+      className="rounded text-[12px] font-medium text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+      Use the server’s default
+    </button>
+  );
 
   if (def.type === 'toggle') {
     return (
@@ -103,9 +63,13 @@ export function SettingField({ def, config, errors, warnings, technical, disable
         <div className="min-w-0">
           <p className={cn('text-sm font-medium text-ink', technical && 'font-mono text-[13px]')}>{technical ? def.path : def.label}</p>
           <p className="mt-0.5 text-[13px] text-muted">{technical ? `${def.label} — ${def.help}` : def.help}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-muted">
+            {unset ? <span>Not set: {SERVER_DEFAULT.toLowerCase()}</span> : resetLink}
+          </p>
+          {error && <p className="mt-1 text-[13px] text-danger" role="alert">{error}</p>}
           {warning && <p className="mt-1 text-[13px] text-warning">{warning}</p>}
         </div>
-        <Toggle id={inputId} checked={Boolean(value)} onChange={onChange} label={def.label} disabled={disabled} />
+        <Toggle id={inputId} checked={value === true} onChange={onChange} label={def.label} disabled={disabled} />
       </div>);
 
   }
@@ -113,7 +77,23 @@ export function SettingField({ def, config, errors, warnings, technical, disable
   let control: React.ReactNode;
   const cls = cn(inputClass, error && inputErrorClass);
   if (def.type === 'textarea') {
-    control = <textarea id={inputId} rows={4} className={cn(cls, 'resize-y leading-relaxed')} value={String(value ?? '')} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
+    control = <textarea id={inputId} rows={4} className={cn(cls, 'resize-y leading-relaxed')} value={typeof value === 'string' ? value : ''} placeholder={unset ? SERVER_DEFAULT : undefined} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)} />;
+  } else if (def.type === 'lines') {
+    const lines = Array.isArray(value) ? value.map(String) : [];
+    control =
+    <textarea
+      id={inputId}
+      rows={Math.max(3, lines.length + 1)}
+      className={cn(cls, 'resize-y leading-relaxed')}
+      value={lines.join('\n')}
+      placeholder={unset ? `${SERVER_DEFAULT}: none` : undefined}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value.split('\n'))}
+      onBlur={() => {
+        const kept = lines.map((l) => l.trim()).filter(Boolean);
+        if (kept.length !== lines.length || kept.some((l, i) => l !== lines[i])) onChange(kept.length ? kept : undefined);
+      }} />;
+
   } else if (def.type === 'number') {
     control =
     <div className="flex items-center gap-2">
@@ -122,46 +102,36 @@ export function SettingField({ def, config, errors, warnings, technical, disable
         type="number"
         min={def.min}
         max={def.max}
-        className={cn(cls, 'w-32')}
+        className={cn(cls, 'w-40')}
         value={typeof value === 'number' ? value : ''}
+        placeholder={unset ? SERVER_DEFAULT : undefined}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value === '' ? 0 : Number(e.target.value))} />
-      
+        onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))} />
+
         {def.unit && <span className="text-sm text-muted">{def.unit}</span>}
       </div>;
 
   } else if (def.type === 'select') {
     const options = resolveOptions(def, config, providers);
-    const selectedVal = def.path === 'defaults.language' ? getLanguageCode(value) : String(value ?? '');
-    const known = options.some((o) => o.value === selectedVal);
-    control = (
-      <select
-        id={inputId}
-        className={cls}
-        value={selectedVal}
-        disabled={disabled}
-        onChange={(e) => {
-          if (def.path === 'defaults.language' && typeof value === 'object' && value !== null) {
-            onChange({ ...value, primary: e.target.value });
-          } else {
-            onChange(e.target.value);
-          }
-        }}
-      >
-        {!known && <option value={selectedVal}>{selectedVal} (not in the list)</option>}
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-    );
+    const selected = unset ? '' : String(value);
+    const known = unset || options.some((o) => o.value === selected);
+    control =
+    <select id={inputId} className={cls} value={selected} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)}>
+        <option value="">{SERVER_DEFAULT}</option>
+        {!known && <option value={selected}>{selected} (not in the list)</option>}
+        {options.map((o) =>
+      <option key={o.value} value={o.value}>{o.label}</option>
+      )}
+      </select>;
 
   } else {
-    control = <input id={inputId} type="text" className={cn(cls, technical && def.level === 'expert' && 'font-mono')} value={String(value ?? '')} disabled={disabled} onChange={(e) => onChange(e.target.value)} />;
+    control = <input id={inputId} type="text" className={cn(cls, technical && def.level === 'expert' && 'font-mono')} value={typeof value === 'string' ? value : ''} placeholder={unset ? SERVER_DEFAULT : undefined} disabled={disabled} onChange={(e) => onChange(e.target.value === '' ? undefined : e.target.value)} />;
   }
 
   return (
     <Field id={id} label={def.label} help={def.help} error={error} warning={warning} technicalName={def.path} showTechnical={technical}>
       {control}
+      {resetLink && def.type !== 'select' && <div className="mt-1.5">{resetLink}</div>}
     </Field>);
 
 }

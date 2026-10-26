@@ -31,7 +31,6 @@ import type {
   Version,
   VersionSummary,
 } from './types';
-import { toServerConfig } from '../utils/configFactory';
 
 const BASE = (import.meta as ImportMeta & { env?: { VITE_API_BASE?: string } }).env?.VITE_API_BASE || '/api';
 /** Where the browser sends API calls (the gateway or dev proxy); the backend address itself is server config. */
@@ -190,6 +189,11 @@ function queryOf(values: Record<string, unknown>): string {
   return text ? `?${text}` : '';
 }
 
+/** The body of PUT /bots/{id}/draft: the config exactly as the editor holds it (what the JSON view shows), nothing added. */
+export function draftBody(config: AgentConfig, baseRevision?: number | null): { config: AgentConfig; base_revision?: number } {
+  return baseRevision === undefined || baseRevision === null ? { config } : { config, base_revision: baseRevision };
+}
+
 export const api = {
   // 1. System status
   health: (opts?: RequestOptions): Promise<{ ok: boolean }> => request('GET', '/health', opts),
@@ -205,7 +209,7 @@ export const api = {
 
   // 5. Validate config
   validate: (config: AgentConfig, opts?: RequestOptions): Promise<ValidationReport> =>
-    request('POST', '/validate', { ...opts, body: toServerConfig(config) }),
+    request('POST', '/validate', { ...opts, body: config }),
 
   // 6. List bots
   listBots: async (opts?: RequestOptions): Promise<BotSummary[]> => {
@@ -227,10 +231,9 @@ export const api = {
 
   // 10. Save draft
   saveDraft: (id: string, config: AgentConfig, baseRevision?: number | null, opts?: RequestOptions): Promise<SavedDraft> => {
-    const serverConf = toServerConfig(config);
     return request('PUT', `/bots/${enc(id)}/draft`, {
       ...opts,
-      body: baseRevision === undefined || baseRevision === null ? { config: serverConf } : { config: serverConf, base_revision: baseRevision },
+      body: draftBody(config, baseRevision),
     });
   },
 
@@ -273,11 +276,8 @@ export const api = {
     }),
 
   // 19. Preview prompt
-  previewPrompt: (body: Record<string, unknown>, opts?: RequestOptions): Promise<PromptPreview> => {
-    const config = body.config;
-    const requestBody = config && isRecord(config) ? { ...body, config: toServerConfig(config as AgentConfig) } : body;
-    return request('POST', '/preview/prompt', { ...opts, body: requestBody });
-  },
+  previewPrompt: (body: Record<string, unknown>, opts?: RequestOptions): Promise<PromptPreview> =>
+    request('POST', '/preview/prompt', { ...opts, body }),
 
   // 20. Preview tool result
   previewResult: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> =>

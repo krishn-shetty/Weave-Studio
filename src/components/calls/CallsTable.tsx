@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import type { CallOutcome, CallRecord, ChannelType } from '../../types/studio';
+import type { CallChannel, CallOutcome, CallRecord } from '../../types/studio';
 import { StatusChip, type ChipTone } from '../ui/StatusChip';
 import { formatDuration, formatShortDate } from '../../utils/format';
 import { callPath } from '../../utils/routes';
@@ -17,7 +17,7 @@ export const outcomeMeta: Record<CallOutcome, {label: string;tone: ChipTone;}> =
   in_progress: { label: 'In progress', tone: 'neutral' }
 };
 
-export const channelName: Record<ChannelType, string> = { phone: 'Phone', web_chat: 'Web chat', web_voice: 'Web voice' };
+export const channelName: Record<CallChannel, string> = { phone: 'Phone', web_chat: 'Web chat', web_voice: 'Web voice' };
 
 export function CallsTable({ calls, agentNames }: CallsTableProps) {
   const navigate = useNavigate();

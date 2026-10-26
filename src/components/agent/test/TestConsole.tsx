@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { MicIcon, RotateCcwIcon, SendHorizontalIcon, SquareIcon } from 'lucide-react';
-import type { AgentConfig, ChannelType } from '../../../types/studio';
+import { isWebChannel, type AgentConfig, type ChannelType } from '../../../types/studio';
 import type { TestSession } from '../../../hooks/useTestSession';
 import { Button } from '../../ui/Button';
 import { StatusChip } from '../../ui/StatusChip';
@@ -22,7 +22,7 @@ interface TestConsoleProps {
 const suggestions = ['When is my bill due?', 'Can I speak to a person?', 'Please call me back', 'Thanks, goodbye'];
 
 export function TestConsole({ session, config, revision, onBeforeStart, hasUnsaved }: TestConsoleProps) {
-  const webChannels = config.channels.filter((c) => c.enabled && c.type !== 'phone').map((c) => c.type);
+  const webChannels = (config.channels ?? []).filter((c) => c.enabled && isWebChannel(c.type)).map((c) => c.type);
   const [selected, setSelected] = useState<ChannelType>(webChannels[0] ?? 'web_chat');
   const [draft, setDraft] = useState('');
   const listRef = useRef<HTMLDivElement>(null);

@@ -1,6 +1,10 @@
 export type Role = 'viewer' | 'editor' | 'admin';
 export type EnvironmentName = 'development' | 'staging' | 'production';
-export type ChannelType = 'web_chat' | 'web_voice' | 'phone';
+/** Channel types the server schema accepts (GET /schema, $defs.channel.type). A phone line is `sip_voice`. */
+export type ChannelType = 'web_chat' | 'web_voice' | 'sip_voice' | 'whatsapp' | 'sms' | 'email' | 'custom';
+/** How a call's channel is shown in call lists: the server's sip_voice is a phone call. */
+export type CallChannel = 'web_chat' | 'web_voice' | 'phone';
+export const isWebChannel = (type: ChannelType): type is 'web_chat' | 'web_voice' => type === 'web_chat' || type === 'web_voice';
 export type Tone = 'warm' | 'neutral' | 'formal' | 'upbeat';
 export type ToolType = 'http' | 'end_call' | 'transfer' | 'knowledge_search' | 'send_sms' | 'mcp';
 export type VersionBump = 'major' | 'minor' | 'patch';
@@ -12,8 +16,8 @@ export type EditorView = 'guided' | 'detailed' | 'canvas' | 'json';
 export interface AgentRole {
   id: string;
   name: string;
-  instructions: string | { role?: string; text?: string; [key: string]: any };
-  tools: string[];
+  instructions?: { role?: string; opening?: string; rules?: string[]; [key: string]: any };
+  tools?: string[];
   handoffs?: any[];
   kind?: string;
 }
@@ -29,78 +33,82 @@ export interface ChannelDefinition {
   id: string;
   type: ChannelType;
   enabled: boolean;
-  greeting: string | { say?: string; text?: string; message?: string; [key: string]: any };
+  greeting?: { say?: unknown; allow_interruptions?: boolean; [key: string]: any };
   entry?: any;
   modalities?: any;
-}
-
-export interface LanguageConfig {
-  primary: string;
-  speaks?: string[];
-  also_understands?: string[];
-  auto_detect?: boolean;
   [key: string]: any;
 }
 
+export interface LanguageConfig {
+  primary?: string;
+  speaks?: string[];
+  also_understands?: string[];
+  auto_detect?: boolean;
+}
+
+export interface ModelConfig {
+  provider?: string;
+  model?: string;
+  [key: string]: any;
+}
+
+/**
+ * A bot config exactly as the server stores it (GET /schema). Every section is optional here because a config read from
+ * the server can lack any of them; the editor never fills gaps with invented values. A setting that is not set is the
+ * server's default.
+ */
 export interface AgentConfig {
   schema_version?: string;
-  meta: {
-    id: string;
-    name: string;
-    version: string;
+  meta?: {
+    id?: string;
+    name?: string;
+    version?: string;
     status?: 'draft' | 'published' | 'archived';
     description?: string;
     [key: string]: any;
   };
-  persona: {
-    name: string;
+  persona?: {
+    name?: string;
     company?: string;
     tone?: Tone | string;
-    rules?: string;
-    recording_notice?: boolean;
     style_rules?: string[];
     shared_rules?: string[];
-    disclosures?: { recording_notice?: string; [key: string]: any };
+    disclosures?: { recording_notice?: string };
     [key: string]: any;
   };
-  defaults: {
-    language?: string | LanguageConfig;
-    models: {
-      llm: { provider: string; model: string; [key: string]: any };
-      stt?: { provider: string; model: string; [key: string]: any };
-      tts?: { provider: string; voice?: string; voice_id?: string; model?: string; [key: string]: any };
+  defaults?: {
+    language?: LanguageConfig;
+    models?: {
+      llm?: ModelConfig;
+      stt?: ModelConfig;
+      tts?: ModelConfig & { voice_id?: string };
       [key: string]: any;
     };
     conversation?: {
-      inactivity_timeout_s?: number;
-      allow_interruptions?: boolean;
-      inactivity?: any;
-      turn_handling?: any;
+      inactivity?: { enabled?: boolean; timeout_s?: number; [key: string]: any };
+      turn_handling?: { interruption?: { enabled?: boolean; [key: string]: any }; [key: string]: any };
       [key: string]: any;
     };
     [key: string]: any;
   };
-  channels: ChannelDefinition[];
-  agents: { entry: string; items: AgentRole[]; [key: string]: any };
-  tools: ToolDefinition[];
+  channels?: ChannelDefinition[];
+  agents?: { entry?: string; items?: AgentRole[]; [key: string]: any };
+  tools?: ToolDefinition[];
   post_call?: {
-    summary?: boolean | { enabled: boolean; prompt?: string; [key: string]: any };
-    recording?: boolean | { audio?: boolean; transcript?: boolean; retention_days?: number; [key: string]: any };
-    redact_pii?: boolean;
-    redaction?: { enabled?: boolean; entities?: string[]; patterns?: string[]; [key: string]: any };
+    summary?: { enabled?: boolean; prompt?: string; [key: string]: any };
+    recording?: { audio?: boolean; transcript?: boolean; retention_days?: number };
+    redaction?: { enabled?: boolean; entities?: string[]; patterns?: unknown[]; [key: string]: any };
+    analysis?: any[];
     artifacts?: any[];
     [key: string]: any;
   };
   observability?: {
-    retention_days?: number;
-    store_transcripts?: boolean;
-    session_log?: { enabled?: boolean; directory?: string; detail?: string; retention_days?: number; [key: string]: any };
+    session_log?: { enabled?: boolean; directory?: string; detail?: string; retention_days?: number };
     [key: string]: any;
   };
   runtime?: {
     engine?: string;
     provider_mode?: 'plugins' | 'inference';
-    mode?: 'plugins' | 'inference';
     timezone?: string;
     [key: string]: any;
   };
@@ -210,7 +218,7 @@ export interface ToolCallRecord {
 export interface CallRecord {
   id: string;
   agentId: string;
-  channel: ChannelType;
+  channel: CallChannel;
   /** test = a test conversation (the draft); other = run on a version or 'latest' directly (see ref). */
   environment: EnvironmentName | 'test' | 'other';
   /** What the call ran on, as the server recorded it: draft, an environment, a version. */

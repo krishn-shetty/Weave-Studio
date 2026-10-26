@@ -2,7 +2,7 @@ import React from 'react';
 import { XIcon } from 'lucide-react';
 import type { DraftEditor } from '../../../hooks/useDraftEditor';
 import type { SettingGroupId } from '../../../data/settingsCatalog';
-import type { Path, Tone } from '../../../types/studio';
+import type { Path } from '../../../types/studio';
 import { GuidedSection } from './GuidedSection';
 import { ChannelsEditor } from './ChannelsEditor';
 import { toolTypeLabel } from './toolTypes';
@@ -10,25 +10,21 @@ import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { Segmented } from '../../ui/Segmented';
 import { StatusChip } from '../../ui/StatusChip';
-import { languages, llmProviders } from '../../../data/providers';
+import { llmProviders } from '../../../data/providers';
 import { VOICE_CATALOG } from '../../../data/voiceCatalog';
 import { useProviders } from '../../../hooks/useProviders';
 import { providersFor, voicesFor } from '../../../utils/providerOptions';
 import { fieldId } from '../../../utils/path';
-import { getInstructionsText, getLanguageCode, issuesAt } from '../../../utils/validate';
-import { firstVoiceOf, missingProviderKey } from '../../../utils/settingOptions';
+import { getInstructionsText, issuesAt } from '../../../utils/validate';
+import { missingProviderKey, providerFollowUps } from '../../../utils/settingOptions';
+import { settingsCatalog } from '../../../data/settingsCatalog';
+import { SettingField } from './SettingField';
 import { cn, inputClass, inputErrorClass } from '../../../utils/styles';
 
 interface GuidedViewProps {
   editor: DraftEditor;
   onMore: (group: SettingGroupId) => void;
 }
-
-const tones: {value: Tone;label: string;}[] = [
-{ value: 'warm', label: 'Warm' },
-{ value: 'neutral', label: 'Neutral' },
-{ value: 'formal', label: 'Formal' },
-{ value: 'upbeat', label: 'Upbeat' }];
 
 
 export function GuidedView({ editor, onMore }: GuidedViewProps) {
@@ -47,7 +43,7 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
 
   const llmProviderId = config.defaults?.models?.llm?.provider;
   const ttsProviderId = config.defaults?.models?.tts?.provider;
-  const currentVoice = config.defaults?.models?.tts?.voice_id ?? config.defaults?.models?.tts?.voice;
+  const currentVoice = config.defaults?.models?.tts?.voice_id;
   const llmModels = llmProviders.find((p) => p.id === llmProviderId)?.models ?? [];
   const voices = voicesFor(ttsProviderId, VOICE_CATALOG);
   const providerChoices = (stage: 'llm' | 'tts', current: string | undefined) =>
@@ -58,15 +54,11 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
 
   const setProvider = (kind: 'llm' | 'tts', id: string) => {
     update(['defaults', 'models', kind, 'provider'], id);
-    const first = kind === 'llm' ? llmProviders.find((p) => p.id === id)?.models[0]?.id : firstVoiceOf(id);
-    if (first) {
-      if (kind === 'llm') {
-        update(['defaults', 'models', kind, 'model'], first);
-      } else {
-        update(['defaults', 'models', kind, 'voice'], first);
-        update(['defaults', 'models', kind, 'voice_id'], first);
-      }
-    }
+    providerFollowUps[`defaults.models.${kind}.provider`].apply(id, update);
+  };
+  const setting = (path: string) => {
+    const def = settingsCatalog.find((s) => s.path === path);
+    return def ? <SettingField key={path} def={def} config={config} errors={validation.errors} warnings={validation.warnings} technical={false} disabled={disabled} update={update} /> : null;
   };
 
   return (
@@ -80,9 +72,7 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
             <input id={`${fieldId('persona.name')}-input`} className={inputClass} value={config.persona?.name ?? ''} disabled={disabled} onChange={(e) => update(['persona', 'name'], e.target.value)} />
           </Field>
         </div>
-        <Field id={fieldId('persona.tone')} label="Tone">
-          <Segmented label="Tone" options={tones} value={config.persona?.tone ?? 'neutral'} onChange={(v) => !disabled && update(['persona', 'tone'], v)} />
-        </Field>
+        {setting('persona.tone')}
         {entry &&
         <Field
           id={fieldId(['agents', 'items', entryIndex, 'instructions'])}
@@ -111,58 +101,21 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
       </GuidedSection>
 
       <GuidedSection id="g-voice" title="Voice and language" description="What callers hear on web voice and phone." onMore={() => onMore('talks')}>
-        <Field id={fieldId('defaults.language')} label="Language">
-          {(() => {
-            const currentLang = getLanguageCode(config.defaults?.language);
-            const isKnown = languages.some((l) => l.id === currentLang);
-            const langObj = typeof config.defaults?.language === 'object' && config.defaults?.language !== null ? config.defaults.language : null;
-            return (
-              <>
-                <select
-                  id={`${fieldId('defaults.language')}-input`}
-                  className={cn(inputClass, 'max-w-xs')}
-                  value={currentLang}
-                  disabled={disabled}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (langObj) {
-                      update(['defaults', 'language'], { ...langObj, primary: val });
-                    } else {
-                      update(['defaults', 'language'], val);
-                    }
-                  }}
-                >
-                  {!isKnown && currentLang && (
-                    <option key={`lang-${currentLang}`} value={currentLang}>
-                      {currentLang}
-                    </option>
-                  )}
-                  {languages.map((l) => (
-                    <option key={`lang-${l.id}`} value={l.id}>
-                      {l.label}
-                    </option>
-                  ))}
-                </select>
-                {langObj && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted">
-                    {Array.isArray(langObj.speaks) && langObj.speaks.length > 0 && (
-                      <span className="inline-flex items-center gap-1 rounded bg-surface px-2 py-0.5 border border-line">
-                        Also speaks: <strong className="font-medium text-ink">{langObj.speaks.join(', ')}</strong>
-                      </span>
-                    )}
-                    {langObj.auto_detect && (
-                      <span className="inline-flex items-center rounded bg-accent/10 px-2 py-0.5 font-medium text-accent">
-                        Auto-detect enabled
-                      </span>
-                    )}
-                  </div>
-                )}
-              </>
-            );
-          })()}
-        </Field>
+        {setting('defaults.language.primary')}
+        {(config.defaults?.language?.speaks?.length || config.defaults?.language?.auto_detect) &&
+        <div className="-mt-3 mb-5 flex flex-wrap items-center gap-2 text-xs text-muted">
+            {!!config.defaults?.language?.speaks?.length &&
+          <span className="inline-flex items-center gap-1 rounded border border-line bg-surface px-2 py-0.5">
+                Answers in: <strong className="font-medium text-ink">{config.defaults.language.speaks.join(', ')}</strong>
+              </span>
+          }
+            {config.defaults?.language?.auto_detect &&
+          <span className="inline-flex items-center rounded bg-accent/10 px-2 py-0.5 font-medium text-accent">Detects the caller’s language</span>
+          }
+          </div>
+        }
         <Field
-          id={fieldId('defaults.models.tts.voice')}
+          id={fieldId('defaults.models.tts.voice_id')}
           label="Voice"
           error={err(['defaults', 'models', 'tts'])}
           warning={ttsMissing ? `The server doesn’t have ${ttsMissing} yet. Voice calls will fail until an admin adds it.` : listNote}>
@@ -175,15 +128,12 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
           <div>
               <p className="mb-1.5 text-[13px] text-muted">No voices are listed for this provider here. Enter the provider’s voice id.</p>
               <input
-              id={`${fieldId('defaults.models.tts.voice')}-input`}
+              id={`${fieldId('defaults.models.tts.voice_id')}-input`}
               className={cn(inputClass, 'max-w-sm font-mono')}
               value={currentVoice ?? ''}
               disabled={disabled}
               spellCheck={false}
-              onChange={(e) => {
-                update(['defaults', 'models', 'tts', 'voice_id'], e.target.value);
-                update(['defaults', 'models', 'tts', 'voice'], e.target.value);
-              }} />
+              onChange={(e) => update(['defaults', 'models', 'tts', 'voice_id'], e.target.value === '' ? undefined : e.target.value)} />
 
             </div> :
 
@@ -198,11 +148,8 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
                   aria-checked={active}
                   disabled={disabled}
                   title={`Voice id: ${v.voiceId}`}
-                  id={i === 0 ? `${fieldId('defaults.models.tts.voice')}-input` : undefined}
-                  onClick={() => {
-                    update(['defaults', 'models', 'tts', 'voice_id'], v.voiceId);
-                    update(['defaults', 'models', 'tts', 'voice'], v.voiceId);
-                  }}
+                  id={i === 0 ? `${fieldId('defaults.models.tts.voice_id')}-input` : undefined}
+                  onClick={() => update(['defaults', 'models', 'tts', 'voice_id'], v.voiceId)}
                   className={cn(
                     'rounded-lg border px-3 py-2.5 text-left transition-[border-color,background-color] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40',
                     active ? 'border-accent bg-accent-soft/60 ring-1 ring-accent' : 'border-line hover:border-line-strong'
@@ -278,7 +225,7 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
         <div id={fieldId(toolsPath)} className="scroll-mt-28 rounded-md transition-[box-shadow] duration-200">
           <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
             {declared.map((tool) => {
-              const on = entry?.tools.includes(tool.id) ?? false;
+              const on = (entry?.tools ?? []).includes(tool.id);
               return (
                 <li key={tool.id} className="flex items-start justify-between gap-4 px-4 py-3">
                   <div className="min-w-0">
@@ -328,82 +275,7 @@ export function GuidedView({ editor, onMore }: GuidedViewProps) {
 
       <GuidedSection id="g-records" title="Call records" description="What’s kept after each conversation. Transcripts may contain personal data." onMore={() => onMore('after')}>
         <div className="space-y-4">
-          {[
-          {
-            path: ['observability', 'store_transcripts'] as Path,
-            label: 'Keep transcripts',
-            help: 'Needed to review calls in Studio.',
-            value: config.observability?.store_transcripts ?? true,
-            onChange: (v: boolean) => update(['observability', 'store_transcripts'], v),
-          },
-          {
-            path: ['post_call', 'recording'] as Path,
-            label: 'Record audio',
-            help: 'Keeps audio of phone and voice calls.',
-            value: typeof config.post_call?.recording === 'object'
-              ? Boolean(config.post_call.recording.audio)
-              : Boolean(config.post_call?.recording),
-            onChange: (v: boolean) => {
-              if (typeof config.post_call?.recording === 'object') {
-                update(['post_call', 'recording'], { ...config.post_call.recording, audio: v });
-              } else {
-                update(['post_call', 'recording'], { audio: v, transcript: true });
-              }
-            },
-          },
-          {
-            path: ['persona', 'recording_notice'] as Path,
-            label: 'Tell callers they may be recorded',
-            help: 'Required in many regions when recording.',
-            value: Boolean(config.persona?.disclosures?.recording_notice ?? config.persona?.recording_notice),
-            onChange: (v: boolean) => {
-              update(['persona', 'recording_notice'], v);
-              if (v) {
-                update(['persona', 'disclosures'], {
-                  ...(config.persona?.disclosures || {}),
-                  recording_notice: typeof config.persona?.disclosures?.recording_notice === 'string'
-                    ? config.persona.disclosures.recording_notice
-                    : 'This call may be recorded.',
-                });
-              } else {
-                const disc = { ...(config.persona?.disclosures || {}) };
-                delete disc.recording_notice;
-                update(['persona', 'disclosures'], disc);
-              }
-            },
-          }].
-          map((row) =>
-          <div key={row.path.join('.')} id={fieldId(row.path)} className="flex scroll-mt-28 items-start justify-between gap-6 rounded-md transition-[box-shadow] duration-200">
-              <div>
-                <p className="text-sm font-medium text-ink">{row.label}</p>
-                <p className="mt-0.5 text-[13px] text-muted">{row.help}</p>
-                {warn(row.path) && <p className="mt-1 text-[13px] text-warning">{warn(row.path)}</p>}
-              </div>
-              <Toggle id={`${fieldId(row.path)}-input`} checked={Boolean(row.value)} label={row.label} disabled={disabled} onChange={row.onChange} />
-            </div>
-          )}
-          <Field id={fieldId('observability.retention_days')} label="Keep records for" warning={warn(['observability', 'retention_days'])}>
-            <select
-              id={`${fieldId('observability.retention_days')}-input`}
-              className={cn(inputClass, 'max-w-xs')}
-              value={config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90}
-              disabled={disabled}
-              onChange={(e) => {
-                const days = Number(e.target.value);
-                update(['observability', 'retention_days'], days);
-                if (config.observability?.session_log) {
-                  update(['observability', 'session_log'], { ...config.observability.session_log, retention_days: days });
-                }
-              }}>
-              
-              {Array.from(new Set([7, 30, 90, 365, config.observability?.session_log?.retention_days ?? config.observability?.retention_days ?? 90]))
-                .filter((d): d is number => typeof d === 'number' && !isNaN(d))
-                .sort((a, b) => a - b)
-                .map((d) => (
-                  <option key={`retention-${d}`} value={d}>{d} days</option>
-                ))}
-            </select>
-          </Field>
+          {['observability.session_log.enabled', 'post_call.recording.transcript', 'post_call.recording.audio', 'persona.disclosures.recording_notice', 'observability.session_log.retention_days'].map(setting)}
         </div>
       </GuidedSection>
     </div>);

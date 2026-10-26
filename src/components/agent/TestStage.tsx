@@ -2,7 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CircleAlertIcon, PhoneIcon } from 'lucide-react';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
-import type { Path } from '../../types/studio';
+import { isWebChannel, type Path } from '../../types/studio';
 import { useTestSession } from '../../hooks/useTestSession';
 import { TestConsole } from './test/TestConsole';
 import { TracePanel } from './test/TracePanel';
@@ -22,7 +22,7 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
   const config = editor.config!;
   const validation = editor.validation!;
   const session = useTestSession(editor.agent!.id, config, editor.baseRevision);
-  const hasWebChannel = config.channels.some((c) => c.enabled && c.type !== 'phone');
+  const hasWebChannel = (config.channels ?? []).some((c) => c.enabled && isWebChannel(c.type));
 
   let blocker: React.ReactNode = null;
   if (!validation.valid) {

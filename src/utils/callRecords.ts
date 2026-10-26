@@ -2,7 +2,7 @@
 // says the same about a call. Pure.
 
 import type { CallSummaryItem } from '../api/types';
-import type { CallOutcome, CallRecord, ChannelType } from '../types/studio';
+import type { CallChannel, CallOutcome, CallRecord } from '../types/studio';
 
 /** ended -> resolved or handed over; unfinished (the log stopped without an end) -> cut off; else still in progress. */
 export function callOutcome(status: string, handoffs = 0): CallOutcome {
@@ -11,7 +11,7 @@ export function callOutcome(status: string, handoffs = 0): CallOutcome {
   return 'in_progress';
 }
 
-export function callChannel(channel: CallSummaryItem['channel']): ChannelType {
+export function callChannel(channel: CallSummaryItem['channel']): CallChannel {
   const type = typeof channel === 'object' && channel !== null ? channel.type : channel;
   if (type === 'web_chat') return 'web_chat';
   if (type === 'sip_voice' || type === 'phone') return 'phone';

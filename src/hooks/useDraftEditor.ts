@@ -3,8 +3,7 @@ import type { AgentConfig, Draft, Path, ValidationReport } from '../types/studio
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { validateConfig } from '../utils/validate';
-import { normalizeConfig } from '../utils/configFactory';
-import { setAt } from '../utils/path';
+import { putAt } from '../utils/path';
 import { api } from '../api/client';
 
 export type SaveStatus = 'saved' | 'unsaved' | 'saving' | 'conflict' | 'error';
@@ -18,7 +17,7 @@ export function useDraftEditor(agentId: string) {
   const agent = getAgent(agentId);
   const canEdit = can('edit');
 
-  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ? normalizeConfig(agent.draft.config) : null);
+  const [config, setConfig] = useState<AgentConfig | null>(agent?.draft.config ? agent.draft.config : null);
   const [baseRevision, setBaseRevision] = useState(agent?.draft.revision ?? 0);
   const [savedAt, setSavedAt] = useState(agent?.draft.saved_at ?? '');
   const [status, setStatus] = useState<SaveStatus>('saved');
@@ -41,7 +40,7 @@ export function useDraftEditor(agentId: string) {
   useEffect(() => {
     const a = getAgent(agentId);
     if (!a) return;
-    setConfig(normalizeConfig(a.draft.config));
+    setConfig(a.draft.config);
     setBaseRevision(a.draft.revision);
     setSavedAt(a.draft.saved_at);
     setStatus('saved');
@@ -56,7 +55,7 @@ export function useDraftEditor(agentId: string) {
   useEffect(() => {
     if (!agent) return;
     if (statusRef.current === 'saved' && agent.draft.revision !== baseRef.current) {
-      setConfig(normalizeConfig(agent.draft.config));
+      setConfig(agent.draft.config);
       setBaseRevision(agent.draft.revision);
       setSavedAt(agent.draft.saved_at);
     }
@@ -230,7 +229,7 @@ export function useDraftEditor(agentId: string) {
         if (!prev) return prev;
         setHistory((h) => [...h.slice(-25), prev]);
         setFuture([]);
-        return setAt(prev, path, value);
+        return putAt(prev, path, value);
       });
       setStatus((s) => (s === 'conflict' ? s : 'unsaved'));
     },
@@ -264,7 +263,7 @@ export function useDraftEditor(agentId: string) {
   /** Replace the editor contents with the newer draft found on the server. */
   const loadRemoteDraft = useCallback(() => {
     if (!remoteDraft) return;
-    setConfig(normalizeConfig(remoteDraft.config));
+    setConfig(remoteDraft.config);
     baseRef.current = remoteDraft.revision;
     statusRef.current = 'saved';
     setBaseRevision(remoteDraft.revision);
@@ -285,7 +284,7 @@ export function useDraftEditor(agentId: string) {
         void performSaveRef.current(true);
         return;
       }
-      setConfig(normalizeConfig(conflict.config));
+      setConfig(conflict.config);
       baseRef.current = conflict.revision;
       statusRef.current = 'saved';
       setBaseRevision(conflict.revision);
