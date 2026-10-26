@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 import react from '@vitejs/plugin-react'
 import { forwardedUser } from './src/utils/forwardedUser'
@@ -34,6 +35,10 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react()],
+    resolve: {
+      // Matches "paths" in tsconfig.json; shadcn components import from "@/…".
+      alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
     server: {
       proxy,
     },

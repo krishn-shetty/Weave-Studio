@@ -102,7 +102,7 @@ export function ValidationPanel({ view, config, onGoTo }: ValidationPanelProps) 
               <><span className="font-semibold text-danger">Not protected yet: </span><span className="font-medium text-ink">{u.feature}</span> is set up but the runtime does not enforce it yet. Callers are not protected by it.</> :
               <>This agent uses <span className="font-medium text-ink">{u.feature}</span>, which the runtime can’t run yet. It will be skipped on calls.</>
               }
-                  <span className="mt-0.5 block font-mono text-xs text-muted">{u.where}</span>
+                  <span className="mt-0.5 block break-all font-mono text-xs text-muted">{u.where}</span>
                 </li>
             )}
             </ul>
@@ -157,8 +157,8 @@ function IssueGroup({ title, hint, tone, issues, config, onGoTo }: IssueGroupPro
                 >
                   <Icon className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', tone === 'danger' ? 'text-danger' : 'text-warning')} aria-hidden />
                   <span className="min-w-0">
-                    {issue.path && <span className="block text-xs font-medium text-muted">{describePath(issue.path, config)}</span>}
-                    <span className="block text-[13px] leading-snug text-ink">{issue.message}</span>
+                    {issue.path && <span className="block text-xs font-medium text-muted [overflow-wrap:anywhere]">{describePath(issue.path, config)}</span>}
+                    <span className="block text-[13px] leading-snug text-ink [overflow-wrap:anywhere]">{issue.message}</span>
                   </span>
                 </button>
               </div>

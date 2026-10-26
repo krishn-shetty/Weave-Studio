@@ -38,6 +38,15 @@ export default {content: [
         panel: '0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.05)',
         overlay: '0 12px 32px rgb(16 24 40 / 0.14), 0 2px 6px rgb(16 24 40 / 0.06)',
       },
+      keyframes: {
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.04)' },
+        },
+      },
+      animation: {
+        breathe: 'breathe 2.4s ease-in-out infinite',
+      },
     },
   },
 };

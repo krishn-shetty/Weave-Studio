@@ -25,6 +25,7 @@ export const FORBIDDEN = [
 export const ALLOWED_MATCHES = {
   'src/utils/format.ts': ['Math.random('], // randomHex: client-side ids
   'src/components/ui/Toast/toastStore.ts': ['Math.random('], // toast ids
+  'src/components/ui/live-orb.tsx': ['Math.random('], // when the orb blinks and where it glances; never data
 };
 
 /** Paths never scanned. */

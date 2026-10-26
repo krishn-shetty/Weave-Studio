@@ -311,7 +311,7 @@ const IDS: Record<ActionId, string> = { end_call: 'end_call', hand_over: 'escala
 const TRANSFER_ID = 'human_support';
 const FORM_ID = 'contact_details';
 const CONNECTION_ID = 'your_system';
-const GOODBYE = { id: 'goodbye', text: 'Thank you for getting in touch. Goodbye!' };
+export const GOODBYE = { id: 'goodbye', text: 'Thank you for getting in touch. Goodbye!' };
 export const CALLBACK_MESSAGE = { id: 'callback_line', text: 'I’m sorry, I can’t put you through to a person from here right now. Please get in touch with us again a little later.' };
 
 type Tool = Json & { id: string; type: string };

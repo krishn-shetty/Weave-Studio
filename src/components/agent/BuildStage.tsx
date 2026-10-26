@@ -21,6 +21,7 @@ import { ConcurrentEditBanner } from './ConcurrentEditBanner';
 import { ImportExportModal } from './build/ImportExportModal';
 import { NavMark } from './AgentHeader';
 import { fieldId } from '../../utils/path';
+import { flash, highlight } from '../../utils/focusField';
 import { cn } from '../../utils/styles';
 
 export interface FocusRequest {
@@ -53,24 +54,6 @@ const SECTION_PARTS: Record<BuildSection, { parts: GuidedPart[]; groups: Setting
   // Everything of After the call is asked on its own page (nothing is asked twice).
   aftercall: { parts: [], groups: [] },
 };
-
-function highlight(path: Path, minLength: number): boolean {
-  for (let len = path.length; len >= minLength && len > 0; len--) {
-    const el = document.getElementById(fieldId(path.slice(0, len)));
-    if (el) {
-      flash(el);
-      return true;
-    }
-  }
-  return false;
-}
-
-function flash(el: HTMLElement) {
-  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  el.querySelector<HTMLElement>('input, textarea, select, button')?.focus({ preventScroll: true });
-  el.classList.add('ring-2', 'ring-accent/40', 'ring-offset-4');
-  window.setTimeout(() => el.classList.remove('ring-2', 'ring-accent/40', 'ring-offset-4'), 1800);
-}
 
 /** A readiness step's `focus` -> the field it is about (on this section), by its id in the page. */
 function focusElement(focus: string, editor: DraftEditor): HTMLElement | null {
@@ -150,6 +133,39 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
   const problems = problemsBySection(editor.validationView.report?.errors ?? []);
   const { parts, groups } = SECTION_PARTS[section];
   const current = BUILD_SECTIONS.find((s) => s.id === section);
+  const importExport =
+  <ImportExportModal
+    open={importExportOpen}
+    onClose={() => setImportExportOpen(false)}
+    agent={editor.agent}
+    currentConfig={editor.config}
+    onConfigImported={editor.replaceConfig} />;
+
+
+  // The Workflow uses the whole width: its own panels hold the blocks, the settings and the server's checks.
+  if (view === 'canvas')
+  return (
+    <div className="w-full px-4 py-4 lg:px-6">
+        <ConcurrentEditBanner editor={editor} />
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-ink">Workflow</h2>
+            <p className="text-[13px] text-muted">Where a conversation starts, which agent talks, and what each one can use and hand over to. Every block is part of this agent’s settings.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1">
+            <Button size="sm" variant="ghost" onClick={() => navigate(targetPath(agentId, { stage: 'build', section }))}>Back to {current?.label}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setView('all')}>All settings</Button>
+            <Button size="sm" variant="ghost" onClick={() => setView('json')}>JSON</Button>
+            <Button size="sm" variant="ghost" onClick={() => setImportExportOpen(true)}>
+              <FileJsonIcon className="h-3.5 w-3.5" aria-hidden />
+              Import / Export
+            </Button>
+          </div>
+        </div>
+        <WorkflowCanvas editor={editor} onGoTo={focusPath} onOpenSection={(s) => navigate(targetPath(agentId, { stage: 'build', section: s }))} />
+        {importExport}
+      </div>);
+
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">
@@ -241,14 +257,6 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
             </>
           }
           {view === 'all' && <DetailedView editor={editor} initialGroup={detailedGroup} onOpenJson={() => setView('json')} />}
-          {view === 'canvas' &&
-          <WorkflowCanvas
-            editor={editor}
-            onGoToDetailedGroup={(g) => {
-              setDetailedGroup(g as SettingGroupId);
-              setView('all');
-            }} />
-          }
           {view === 'json' && <JsonView editor={editor} focusKey={focus === 'tests' ? 'tests' : undefined} />}
           {view !== 'section' &&
           <Button size="sm" variant="ghost" className="mt-4" onClick={() => navigate(targetPath(agentId, { stage: 'build', section }))}>
@@ -262,12 +270,7 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
         </aside>
       </div>
 
-      <ImportExportModal
-        open={importExportOpen}
-        onClose={() => setImportExportOpen(false)}
-        agent={editor.agent}
-        currentConfig={editor.config}
-        onConfigImported={editor.replaceConfig} />
+      {importExport}
     </div>);
 
 }

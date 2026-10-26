@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { AgentConfig, ChannelType } from '../types/studio';
 import type { ChatMessage, FormRequest, TraceEvent } from '../types/testConsole';
 import { api, followCall } from '../api/client';
@@ -12,6 +12,19 @@ const TOPIC_TRANSCRIPTION = 'lk.transcription';
 const TOPIC_CHAT = 'lk.chat';
 const TOPIC_FORM = 'agent-builder.form';
 const TOPIC_FORM_SUBMIT = 'agent-builder.form.submit';
+
+// Audio meters: an analyser's RMS (speech sits around 0.05–0.3) is boosted into a 0–1 level, the same boost the
+// voice orb gives its own microphone. The agent's voice drives the level; the caller's moves it only a little.
+const METER_OPTIONS = { fftSize: 512, smoothingTimeConstant: 0.3, minDecibels: -90, maxDecibels: -10 };
+const LEVEL_GAIN = 4.5;
+const USER_LEVEL_SHARE = 0.35;
+const METER_INTERVAL_MS = 50;
+
+interface Meter {
+  track: unknown;
+  calculateVolume: () => number;
+  cleanup: () => Promise<void>;
+}
 
 export interface TestSession {
   status: SessionStatus;
@@ -52,6 +65,9 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
   const roomRef = useRef<any>(null);
   const audioHostRef = useRef<HTMLDivElement | null>(null);
   const streamUnsubRef = useRef<(() => void) | null>(null);
+  const agentMeterRef = useRef<Meter | null>(null);
+  const userMeterRef = useRef<Meter | null>(null);
+  const meterTimerRef = useRef<number | null>(null);
   const startRef = useRef(0);
   const activeAgentRef = useRef(agentId);
   activeAgentRef.current = agentId;
@@ -89,7 +105,34 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
     setMessages((prev) => [...prev, { ...m, id: `m_${Date.now().toString(36)}_${prev.length}` }]);
   }, []);
 
+  const setMeter = useCallback((ref: MutableRefObject<Meter | null>, next: Meter | null) => {
+    ref.current?.cleanup().catch(() => undefined);
+    ref.current = next;
+  }, []);
+
+  const stopMeters = useCallback(() => {
+    if (meterTimerRef.current !== null) {
+      window.clearInterval(meterTimerRef.current);
+      meterTimerRef.current = null;
+    }
+    setMeter(agentMeterRef, null);
+    setMeter(userMeterRef, null);
+    setAudioLevel(0);
+  }, [setMeter]);
+
+  // Samples both meters while connected; state only changes when the level does, so silence costs no renders.
+  const startMeters = useCallback(() => {
+    if (meterTimerRef.current !== null) return;
+    meterTimerRef.current = window.setInterval(() => {
+      const agent = agentMeterRef.current?.calculateVolume() ?? 0;
+      const user = userMeterRef.current?.calculateVolume() ?? 0;
+      const next = Math.round(Math.min(1, Math.max(agent, user * USER_LEVEL_SHARE) * LEVEL_GAIN) * 100) / 100;
+      setAudioLevel((prev) => (Math.abs(prev - next) < 0.02 ? prev : next));
+    }, METER_INTERVAL_MS);
+  }, []);
+
   const cleanup = useCallback(() => {
+    stopMeters();
     if (streamUnsubRef.current) {
       streamUnsubRef.current();
       streamUnsubRef.current = null;
@@ -107,7 +150,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         // ignore
       }
     }
-  }, []);
+  }, [stopMeters]);
 
   useEffect(() => {
     return () => {
@@ -177,7 +220,15 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         }
 
         // 3. Dynamically import livekit-client
-        const { Room, RoomEvent, Track } = await import('livekit-client');
+        const { Room, RoomEvent, Track, createAudioAnalyser } = await import('livekit-client');
+        // A meter that fails to start (no Web Audio) leaves the orb idle; the call itself is unaffected.
+        const meterFor = (track: any): Meter | null => {
+          try {
+            return { track, ...createAudioAnalyser(track, METER_OPTIONS) };
+          } catch {
+            return null;
+          }
+        };
         const room = new Room({
           audioCaptureDefaults: {
             autoGainControl: true,
@@ -237,28 +288,29 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
           if (track.kind === Track.Kind.Audio && audioHostRef.current) {
             const element = track.attach();
             audioHostRef.current.appendChild(element);
+            // Meter the agent from its own track. Chrome only feeds a remote track to Web Audio while it is
+            // attached to an element, which the line above does.
+            setMeter(agentMeterRef, meterFor(track));
           }
         });
 
         room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
           track.detach().forEach((el: any) => el.remove());
+          if (agentMeterRef.current?.track === track) setMeter(agentMeterRef, null);
         });
 
-        // Active speakers changed & audio levels
+        // Active speakers changed: who is talking (the level itself comes from the meters)
         room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
           const agentSpeaker = speakers.find((s) => s.identity !== room.localParticipant.identity);
           if (agentSpeaker) {
             setAgentSpeaking(true);
-            setAudioLevel(agentSpeaker.audioLevel || 0.4);
             setBubbleState('speaking');
           } else {
             setAgentSpeaking(false);
             const localSpeaker = speakers.find((s) => s.identity === room.localParticipant.identity);
             if (localSpeaker) {
-              setAudioLevel(localSpeaker.audioLevel || 0.3);
               setBubbleState('listening');
             } else {
-              setAudioLevel(0);
               setBubbleState((prev) => (prev === 'speaking' ? 'listening' : prev));
             }
           }
@@ -297,6 +349,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         await room.connect(session.livekit_url, session.token);
         reportLiveKitStatus({ state: 'ok', at: Date.now(), connectMs: Date.now() - startRef.current });
         setStatus('live');
+        startMeters();
         await room.startAudio().catch((err: unknown) => {
           // Audio autoplay may require user interaction
           void err;
@@ -305,7 +358,9 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         // 5. Enable microphone if voice channel
         if (type === 'web_voice') {
           try {
-            await room.localParticipant.setMicrophoneEnabled(true);
+            const mic = await room.localParticipant.setMicrophoneEnabled(true);
+            // Reads the published track; a muted mic simply reads as silence.
+            if (mic?.audioTrack) setMeter(userMeterRef, meterFor(mic.audioTrack));
             setListening(true);
             setBubbleState('listening');
             addTrace([
@@ -343,7 +398,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         ]);
       }
     },
-    [cleanup, addTrace, addMessage, stop]
+    [cleanup, addTrace, addMessage, stop, setMeter, startMeters]
   );
 
   const send = useCallback(
