@@ -33,10 +33,3 @@ export interface TraceEvent {
   detail?: string;
   status?: 'ok' | 'error' | 'info';
 }
-
-export interface SimulatedReply {
-  text: string;
-  trace: Omit<TraceEvent, 'id' | 'at_ms'>[];
-  form?: FormRequest;
-  end?: boolean;
-}

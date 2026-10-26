@@ -20,18 +20,12 @@ import { BreadcrumbProvider } from './contexts/BreadcrumbContext';
 import { Analytics } from './pages/Analytics';
 import { Live } from './pages/Live';
 
-interface AppProps {
-  role?: 'admin' | 'editor' | 'viewer';
-  simulateConflict?: boolean;
-  testBackend?: 'simulated' | 'not_configured';
-}
-
-export function App({ role = 'admin', simulateConflict = false, testBackend = 'simulated' }: AppProps) {
+export function App() {
   return (
     <ThemeProvider>
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <AuthProvider assignedRole={role}>
-          <StudioProvider simulateConflict={simulateConflict} testBackend={testBackend}>
+        <AuthProvider>
+          <StudioProvider>
             <BreadcrumbProvider>
               <ToastProvider position="top-right">
                 <ErrorBoundary fallbackTitle="An application error occurred">

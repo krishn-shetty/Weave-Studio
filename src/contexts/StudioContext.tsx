@@ -21,8 +21,6 @@ import { currentDeployments } from '../utils/agentStatus';
 import { api, ApiError } from '../api/client';
 import type { BotSummary } from '../api/types';
 
-export type TestBackend = 'simulated' | 'not_configured' | 'real';
-
 export type SaveResult =
   | { ok: true; draft: Draft }
   | { ok: false; conflict: Draft };
@@ -44,7 +42,6 @@ interface StudioValue {
   activity: ActivityItem[];
   loading: boolean;
   error: string | null;
-  testBackend: TestBackend;
   technicalNames: boolean;
   setTechnicalNames: (v: boolean) => void;
   activeEnvironment: EnvironmentName;
@@ -77,15 +74,10 @@ interface StudioValue {
 const StudioContext = createContext<StudioValue | null>(null);
 
 interface StudioProviderProps {
-  simulateConflict?: boolean;
-  testBackend?: TestBackend;
   children: React.ReactNode;
 }
 
-export function StudioProvider({
-  testBackend = 'real',
-  children,
-}: StudioProviderProps) {
+export function StudioProvider({ children }: StudioProviderProps) {
   const { user } = useAuth();
   const who = user?.name ?? 'Unknown';
 
@@ -667,7 +659,6 @@ export function StudioProvider({
       activity,
       loading,
       error,
-      testBackend,
       technicalNames,
       setTechnicalNames,
       activeEnvironment,
@@ -701,7 +692,6 @@ export function StudioProvider({
       activity,
       loading,
       error,
-      testBackend,
       technicalNames,
       activeEnvironment,
       pinnedAgentIds,

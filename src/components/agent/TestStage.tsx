@@ -1,9 +1,8 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CircleAlertIcon, ServerOffIcon, PhoneIcon } from 'lucide-react';
+import { CircleAlertIcon, PhoneIcon } from 'lucide-react';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import type { Path } from '../../types/studio';
-import { useStudio } from '../../contexts/StudioContext';
 import { useTestSession } from '../../hooks/useTestSession';
 import { TestConsole } from './test/TestConsole';
 import { TracePanel } from './test/TracePanel';
@@ -19,7 +18,6 @@ interface TestStageProps {
 }
 
 export function TestStage({ editor, onGoToField }: TestStageProps) {
-  const { testBackend } = useStudio();
   const navigate = useNavigate();
   const config = editor.config!;
   const validation = editor.validation!;

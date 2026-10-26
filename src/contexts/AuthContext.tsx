@@ -27,13 +27,15 @@ interface AuthValue {
 const AuthContext = createContext<AuthValue | null>(null);
 
 interface AuthProviderProps {
-  assignedRole: Role;
   children: React.ReactNode;
 }
 
+// Temporary sign-in: there is no auth API yet, so everyone gets this role. A real login replaces this provider later.
+const TEMPORARY_ROLE: Role = 'admin';
+
 const SESSION_STORAGE_KEY = 'weave_auth_user';
 
-export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(() => {
     try {
       const saved = sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -70,7 +72,7 @@ export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
   }, [user]);
 
   const signIn = useCallback(
-    async (identifier = 'shetty@weave.local', password = '', role = assignedRole): Promise<{ ok: boolean; error?: string }> => {
+    async (identifier = 'shetty@weave.local', password = '', role = TEMPORARY_ROLE): Promise<{ ok: boolean; error?: string }> => {
       setSigningIn(true);
       await new Promise((r) => setTimeout(r, 400));
 
@@ -97,7 +99,7 @@ export function AuthProvider({ assignedRole, children }: AuthProviderProps) {
       setSessionExpired(false);
       return { ok: true };
     },
-    [assignedRole]
+    []
   );
 
   const signOut = useCallback(() => {

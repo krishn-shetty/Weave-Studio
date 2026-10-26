@@ -62,9 +62,12 @@ export function SignIn() {
 
         <section className="rounded-xl border border-line bg-surface p-8 shadow-panel" aria-labelledby="signin-title">
           <h2 id="signin-title" className="text-lg font-semibold text-ink">
-            Sign in
+            Temporary sign-in
           </h2>
-          <p className="mt-1 text-sm text-muted">Use your work account credentials.</p>
+          <p className="mt-1 text-sm text-muted">
+            Your email or phone is sent to the API as your name on saves and publishes. The password is not checked yet; a
+            real sign-in will replace this.
+          </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             {error && (
