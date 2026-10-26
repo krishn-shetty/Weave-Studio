@@ -1,20 +1,10 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
+import { SKIPPED, violations } from './no-fake-rules.mjs';
 
-const FORBIDDEN = [
-  /from ['"]msw/,
-  /setupWorker/,
-  /\bfaker\b/i,
-  /lorem ipsum/i,
-  /demo[ _-]?mode/i,
-  /\bmockData\b/,
-  /\bsampleData\b/,
-  /\bdummy\w*/i,
-  /VITE_USE_MOCK/i,
-  /mockServiceWorker/
-];
-
-const ALLOWED = [`${sep}tests${sep}`, '.test.', '.stories.', `${sep}e2e${sep}`];
+// Scans the app source and the files that configure where it talks to, then the build output.
+const ROOTS = ['src'];
+const FILES = ['vite.config.ts', 'index.html', '.env.example'];
 
 const walk = (d) => {
   try {
@@ -27,15 +17,18 @@ const walk = (d) => {
   }
 };
 
+const toPosix = (p) => relative(process.cwd(), p).split(sep).join('/');
+
 let bad = 0;
 
-for (const f of walk('src').filter((f) => !ALLOWED.some((a) => f.includes(a)))) {
-  const t = readFileSync(f, 'utf8');
-  for (const re of FORBIDDEN) {
-    if (re.test(t)) {
-      console.error(`FORBIDDEN ${re} in ${f}`);
-      bad++;
-    }
+const scanned = [...ROOTS.flatMap(walk), ...FILES.filter((f) => existsSync(f))]
+  .map(toPosix)
+  .filter((f) => !SKIPPED.some((s) => `/${f}`.includes(s)));
+
+for (const f of scanned) {
+  for (const { re, why } of violations(f, readFileSync(f, 'utf8'))) {
+    console.error(`FORBIDDEN ${re} in ${f}: ${why}`);
+    bad++;
   }
 }
 
@@ -47,7 +40,7 @@ for (const f of walk('dist')) {
 }
 
 if (bad === 0) {
-  console.log('✓ check-no-fake: clean. No mock or fake code found in src or dist.');
+  console.log(`✓ check-no-fake: clean. ${scanned.length} files scanned; no mock, demo, simulated or hardcoded-address code.`);
 }
 
 process.exit(bad ? 1 : 0);
