@@ -1,529 +1,124 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ActivityIcon,
-  ArrowRightIcon,
-  BotIcon,
-  CheckCircle2Icon,
-  HeadphonesIcon,
-  MicIcon,
-  PhoneCallIcon,
-  PhoneOffIcon,
-  RadioIcon,
-  RefreshCwIcon,
-  ServerIcon,
-  ShieldAlertIcon,
-  SparklesIcon,
-  Volume2Icon,
-  WifiIcon,
-  ZapIcon,
-} from 'lucide-react';
+import { RadioIcon, RefreshCwIcon } from 'lucide-react';
 import { useStudio } from '../contexts/StudioContext';
 import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
-import { Tooltip } from '../components/ui/Tooltip';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionHeader,
-  AccordionItem,
-} from '../components/ui/accordion';
-import { formatDuration } from '../utils/format';
+import { channelName } from '../components/calls/CallsTable';
+import { api } from '../api/client';
+import type { CallRecord } from '../types/studio';
+import { toCallRecord } from '../utils/callRecords';
+import { callPath } from '../utils/routes';
+import { envLabel } from '../utils/agentStatus';
+import { formatDuration, timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
 
-interface LiveSession {
-  id: string;
-  agentId: string;
-  agentName: string;
-  caller: string;
-  channel: 'web_voice' | 'phone' | 'web_chat';
-  environment: 'production' | 'staging' | 'development';
-  startedAt: number;
-  durationSeconds: number;
-  lastTurn: string;
-  latencyMs: number;
-  audioActive: boolean;
-  transcriptTurns: { speaker: 'agent' | 'caller'; text: string; time: string }[];
-}
+const REFRESH_MS = 15_000;
 
-interface LiveChannel {
-  id: string;
-  name: string;
-  type: string;
-  activeCount: number;
-  peakCapacity: number;
-  status: 'healthy' | 'warning' | 'idle';
-  latencyMs: number;
-  ingressUrl: string;
-}
-
+/** Calls in progress right now, for every agent: GET /bots/{id}/calls?status=in_progress. */
 export function Live() {
   const { agents } = useStudio();
-  const [activeTab, setActiveTab] = useState<'sessions' | 'channels' | 'infrastructure'>('sessions');
+  const [calls, setCalls] = useState<CallRecord[] | null>(null);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const agentIds = agents.map((a) => a.id).join('|');
 
-  // Live session mock timer for realistic ticking
-  const [currentTime, setCurrentTime] = useState(Date.now());
+  const load = useCallback(async () => {
+    const ids = agentIds ? agentIds.split('|') : [];
+    setLoading(true);
+    const results = await Promise.allSettled(ids.map((id) => api.listCalls(id, { status: 'in_progress', limit: 50 })));
+    const found: CallRecord[] = [];
+    results.forEach((res, i) => {
+      if (res.status === 'fulfilled') res.value.calls.forEach((c) => found.push(toCallRecord(c, ids[i])));
+    });
+    found.sort((a, b) => b.started_at.localeCompare(a.started_at));
+    setCalls(found);
+    setFailed(results.flatMap((res, i) => (res.status === 'rejected' ? [ids[i]] : [])));
+    setCheckedAt(Date.now());
+    setLoading(false);
+  }, [agentIds]);
+
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
+    void load();
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
-  const [sessions, setSessions] = useState<LiveSession[]>(() => [
-    {
-      id: 'session-prod-9941a',
-      agentId: agents[0]?.id || 'voice-test',
-      agentName: agents[0]?.name || 'Customer Concierge',
-      caller: 'Sarah Jenkins (+1 415-555-0192)',
-      channel: 'web_voice',
-      environment: 'production',
-      startedAt: Date.now() - 48000,
-      durationSeconds: 48,
-      lastTurn: 'I can assist you with upgrading your subscription tier to Enterprise.',
-      latencyMs: 142,
-      audioActive: true,
-      transcriptTurns: [
-        { speaker: 'caller', text: 'Hello, I have a question about our enterprise billing renewal.', time: '0:04' },
-        { speaker: 'agent', text: 'Welcome to Northwind Support! I would be glad to check your billing agreement.', time: '0:12' },
-        { speaker: 'caller', text: 'Does the tier include dedicated SIP trunk concurrency?', time: '0:28' },
-        { speaker: 'agent', text: 'Yes, Enterprise includes up to 50 concurrent SIP voice channels and automated rollback.', time: '0:39' },
-      ],
-    },
-    {
-      id: 'session-prod-8812b',
-      agentId: agents[1]?.id || agents[0]?.id || 'support-agent',
-      agentName: agents[1]?.name || agents[0]?.name || 'Technical Support Lead',
-      caller: 'Marcus Vance (+1 650-555-0144)',
-      channel: 'phone',
-      environment: 'production',
-      startedAt: Date.now() - 114000,
-      durationSeconds: 114,
-      lastTurn: 'Checking system gateway availability for your regional data cluster.',
-      latencyMs: 168,
-      audioActive: false,
-      transcriptTurns: [
-        { speaker: 'caller', text: 'Hi, our webhook dispatch seems to be timing out in staging.', time: '0:06' },
-        { speaker: 'agent', text: 'Let me inspect the active endpoint logs and certificate validity.', time: '0:22' },
-        { speaker: 'agent', text: 'Checking system gateway availability for your regional data cluster.', time: '1:45' },
-      ],
-    },
-    {
-      id: 'session-dev-4421c',
-      agentId: agents[0]?.id || 'voice-test',
-      agentName: agents[0]?.name || 'Customer Concierge',
-      caller: 'Internal QA Test Runner',
-      channel: 'web_voice',
-      environment: 'development',
-      startedAt: Date.now() - 22000,
-      durationSeconds: 22,
-      lastTurn: 'Verifying automated scenario assertions against draft revision.',
-      latencyMs: 115,
-      audioActive: true,
-      transcriptTurns: [
-        { speaker: 'caller', text: 'Running preflight automated voice check.', time: '0:02' },
-        { speaker: 'agent', text: 'Verifying automated scenario assertions against draft revision.', time: '0:18' },
-      ],
-    },
-  ]);
-
-  const [channels, setChannels] = useState<LiveChannel[]>([
-    {
-      id: 'ch-web-voice',
-      name: 'WebRTC Voice Gateway',
-      type: 'LiveKit Cloud Serverless',
-      activeCount: 14,
-      peakCapacity: 250,
-      status: 'healthy',
-      latencyMs: 42,
-      ingressUrl: 'wss://livekit.weave-studio.internal/rtc',
-    },
-    {
-      id: 'ch-sip-trunk',
-      name: 'PSTN / SIP Inbound Trunk',
-      type: 'Twilio Elastic SIP Dispatch',
-      activeCount: 8,
-      peakCapacity: 100,
-      status: 'healthy',
-      latencyMs: 65,
-      ingressUrl: 'sip:ingress@sip.weave-studio.internal',
-    },
-    {
-      id: 'ch-web-chat',
-      name: 'Web Chat Socket Hub',
-      type: 'Bidirectional JSON-RPC',
-      activeCount: 29,
-      peakCapacity: 1000,
-      status: 'healthy',
-      latencyMs: 18,
-      ingressUrl: 'https://gateway.weave-studio.internal/v1/chat',
-    },
-  ]);
-
-  // Session pagination state
-  const [sessionPage, setSessionPage] = useState(1);
-  const [sessionPageSize, setSessionPageSize] = useState(5);
-
-  const totalSessionPages = Math.max(1, Math.ceil(sessions.length / sessionPageSize));
-  const safeSessionPage = Math.min(sessionPage, totalSessionPages);
-  const sessionStartIndex = (safeSessionPage - 1) * sessionPageSize;
-  const visibleSessions = sessions.slice(sessionStartIndex, sessionStartIndex + sessionPageSize);
-
-  const handleReorderSessions = (newVisible: typeof visibleSessions) => {
-    const next = [...sessions];
-    next.splice(sessionStartIndex, visibleSessions.length, ...newVisible);
-    setSessions(next);
-  };
-
-  const handleEndSession = (id: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-  };
+  const nameOf = (id: string) => agents.find((a) => a.id === id)?.name ?? id;
+  const where = (c: CallRecord) => (c.environment === 'test' ? 'Test conversation' : c.environment === 'other' ? `On ${c.ref}` : envLabel(c.environment));
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8 lg:px-10">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink">
-              Live Monitoring
-            </h1>
-            <span className="flex items-center gap-1.5 rounded-full bg-success-soft px-2.5 py-0.5 text-xs font-semibold text-success">
-              <span className="h-2 w-2 rounded-full bg-success animate-pulse" />
-              Live Gateway Active
-            </span>
-          </div>
-          <p className="mt-1 text-sm text-ink-soft">
-            Real-time active agent conversations, streaming voice telemetry, and live dispatcher channels.
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Live</h1>
+          <p className="mt-1 text-sm text-muted">
+            Calls in progress right now, across all agents. Checked every {REFRESH_MS / 1000} seconds while this page is open
+            {checkedAt ? `; last checked ${new Date(checkedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : ''}.
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => {
-              // Add a simulated live call
-              const newId = `session-live-${Date.now().toString(36)}`;
-              setSessions((prev) => [
-                {
-                  id: newId,
-                  agentId: agents[0]?.id || 'voice-test',
-                  agentName: agents[0]?.name || 'Support Agent',
-                  caller: `Live Web Visitor (${Math.floor(Math.random() * 900 + 100)})`,
-                  channel: 'web_voice',
-                  environment: 'production',
-                  startedAt: Date.now(),
-                  durationSeconds: 1,
-                  lastTurn: 'Connecting speech audio pipeline…',
-                  latencyMs: 120,
-                  audioActive: true,
-                  transcriptTurns: [
-                    { speaker: 'caller', text: 'Hello? Can anyone hear me?', time: '0:01' },
-                    { speaker: 'agent', text: 'Hello! I am here and listening. How can I help you today?', time: '0:03' },
-                  ],
-                },
-                ...prev,
-              ]);
-            }}
-          >
-            <RadioIcon className="h-3.5 w-3.5 text-accent" />
-            <span>Simulate Incoming Call</span>
-          </Button>
-
-          <Button variant="secondary" size="sm">
-            <RefreshCwIcon className="h-3.5 w-3.5" />
-            <span>Refresh</span>
-          </Button>
-        </div>
+        <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+          <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden />
+          Refresh
+        </Button>
       </div>
 
-      {/* Metric Cards Banner */}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Active Live Calls</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-success-soft text-success">
-              <RadioIcon className="h-3.5 w-3.5" />
-            </span>
+      {failed.length > 0 && (
+        <p role="alert" className="mt-6 rounded-lg border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-ink-soft">
+          Could not check {failed.map(nameOf).join(', ')}, so calls on {failed.length === 1 ? 'that agent' : 'those agents'} may be missing.
+        </p>
+      )}
+
+      <section aria-labelledby="live-calls" aria-live="polite" className="mt-6">
+        <h2 id="live-calls" className="sr-only">Calls in progress</h2>
+        {!calls ? (
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface" aria-busy="true" aria-label="Loading">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="flex items-center justify-between gap-3 px-4 py-4">
+                <div className="h-4 w-40 animate-pulse rounded bg-subtle" />
+                <div className="h-4 w-24 animate-pulse rounded bg-subtle" />
+              </li>
+            ))}
+          </ul>
+        ) : calls.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-line p-12 text-center">
+            <RadioIcon className="mx-auto h-6 w-6 text-muted" aria-hidden />
+            <p className="mt-2 text-sm font-medium text-ink">No calls in progress</p>
+            <p className="mt-1 text-xs text-muted">
+              {agents.length === 0 ? 'There are no agents yet.' : `Checked ${agents.length} ${agents.length === 1 ? 'agent' : 'agents'}.`}
+            </p>
           </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-ink">{sessions.length}</p>
-          <p className="mt-1 text-[11px] text-muted">Across 3 live environments</p>
-        </div>
-
-        <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Average Turn Latency</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-accent-soft text-accent">
-              <ZapIcon className="h-3.5 w-3.5" />
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-ink">141 ms</p>
-          <p className="mt-1 text-[11px] text-success font-medium">Optimal voice threshold (&lt;250ms)</p>
-        </div>
-
-        <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Speech Packet Health</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-info-soft text-info">
-              <WifiIcon className="h-3.5 w-3.5" />
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-ink">99.98%</p>
-          <p className="mt-1 text-[11px] text-muted">0.02% packet jitter</p>
-        </div>
-
-        <div className="rounded-xl border border-line bg-surface p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted">Live Channels Ingress</span>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-warning-soft text-warning">
-              <ServerIcon className="h-3.5 w-3.5" />
-            </span>
-          </div>
-          <p className="mt-2 text-2xl font-bold tracking-tight text-ink">3 Online</p>
-          <p className="mt-1 text-[11px] text-muted">All gateways operational</p>
-        </div>
-      </div>
-
-      {/* Main Accordion Sections */}
-      <div className="mt-8 space-y-8">
-        {/* Section 1: Active Conversations Accordion */}
-        <section aria-labelledby="live-sessions-heading">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 id="live-sessions-heading" className="text-base font-semibold text-ink">
-                Active Live Conversations ({sessions.length})
-              </h2>
-              <p className="text-xs text-muted">
-                Ongoing caller sessions with real-time turn traces and audio diagnostics.
-              </p>
-            </div>
-            <span className="text-xs text-muted">
-              Drag handles or use Move controls to prioritize inspection
-            </span>
-          </div>
-
-          {sessions.length === 0 ? (
-            <div className="rounded-xl border border-line bg-surface p-12 text-center">
-              <HeadphonesIcon className="mx-auto h-8 w-8 text-muted" />
-              <h3 className="mt-3 text-sm font-semibold text-ink">No live calls in progress</h3>
-              <p className="mt-1 text-xs text-muted">
-                New incoming web voice, phone, or chat calls will automatically appear here.
-              </p>
-            </div>
-          ) : (
-            <Accordion
-              items={visibleSessions}
-              onReorder={handleReorderSessions}
-              enableReordering={true}
-              enableDragAndDrop={true}
-              pagination={{
-                page: safeSessionPage,
-                pageSize: sessionPageSize,
-                totalItems: sessions.length,
-                onPageChange: (p) => setSessionPage(p),
-                onPageSizeChange: (s) => {
-                  setSessionPageSize(s);
-                  setSessionPage(1);
-                },
-                pageSizeOptions: [3, 5, 10],
-              }}
-            >
-              {visibleSessions.map((session, idx) => {
-                const isFirst = idx === 0;
-                const isLast = idx === visibleSessions.length - 1;
-                const elapsed = Math.floor((currentTime - session.startedAt) / 1000);
-
-                return (
-                  <AccordionItem
-                    key={session.id}
-                    id={session.id}
-                    index={idx}
-                    isFirst={isFirst}
-                    isLast={isLast}
-                  >
-                    <AccordionHeader
-                      id={session.id}
-                      icon={<PhoneCallIcon className="h-4 w-4 text-success" />}
-                      title={session.caller}
-                      subtitle={
-                        <span>
-                          {session.agentName} · In call for {formatDuration(elapsed)} · Turn latency: {session.latencyMs}ms
-                        </span>
-                      }
-                      badge={
-                        <div className="flex items-center gap-1.5">
-                          <StatusChip tone="success" dot>
-                            Live Streaming
-                          </StatusChip>
-                          <StatusChip tone={session.environment === 'production' ? 'accent' : 'neutral'}>
-                            {session.environment}
-                          </StatusChip>
-                          {session.audioActive && (
-                            <span className="flex items-center gap-1 rounded bg-success-soft px-1.5 py-0.5 text-[10px] font-semibold text-success">
-                              <Volume2Icon className="h-3 w-3 animate-pulse" />
-                              Speaking
-                            </span>
-                          )}
-                        </div>
-                      }
-                      actions={
-                        <div className="flex items-center gap-1">
-                          <Tooltip content="Terminate this live call" position="top">
-                            <Button
-                              size="sm"
-                              variant="danger"
-                              onClick={() => handleEndSession(session.id)}
-                              className="h-8 px-2.5 text-xs"
-                            >
-                              <PhoneOffIcon className="h-3.5 w-3.5 mr-1" />
-                              <span>Disconnect</span>
-                            </Button>
-                          </Tooltip>
-                        </div>
-                      }
-                    />
-
-                    <AccordionContent>
-                      <div className="grid gap-6 md:grid-cols-[1.5fr_1fr]">
-                        <div>
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                            Live Conversation Turns ({session.transcriptTurns.length})
-                          </h4>
-                          <div className="mt-3 space-y-2.5 rounded-lg border border-line bg-surface p-3 max-h-56 overflow-y-auto">
-                            {session.transcriptTurns.map((turn, tIdx) => (
-                              <div
-                                key={tIdx}
-                                className={cn(
-                                  'rounded-md p-2 text-xs',
-                                  turn.speaker === 'agent'
-                                    ? 'border border-line/60 bg-subtle/50 text-ink'
-                                    : 'bg-accent-soft/40 text-accent-strong font-medium'
-                                )}
-                              >
-                                <div className="flex items-center justify-between text-[11px] opacity-70 mb-0.5">
-                                  <span>{turn.speaker === 'agent' ? session.agentName : 'Caller'}</span>
-                                  <span>{turn.time}</span>
-                                </div>
-                                <p>{turn.text}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="rounded-lg border border-line bg-surface p-4 text-xs space-y-3">
-                          <h4 className="font-semibold text-ink">Streaming Telemetry</h4>
-                          <div className="flex justify-between py-1 border-b border-line/50">
-                            <span className="text-muted">Session ID:</span>
-                            <span className="font-mono text-ink text-[11px]">{session.id}</span>
-                          </div>
-                          <div className="flex justify-between py-1 border-b border-line/50">
-                            <span className="text-muted">Codec:</span>
-                            <span className="font-mono text-ink">Opus (48kHz Fullband)</span>
-                          </div>
-                          <div className="flex justify-between py-1 border-b border-line/50">
-                            <span className="text-muted">Round-trip Latency:</span>
-                            <span className="font-semibold text-success">{session.latencyMs} ms</span>
-                          </div>
-                          <div className="flex justify-between py-1 border-b border-line/50">
-                            <span className="text-muted">Token Gen Speed:</span>
-                            <span className="font-mono text-ink">44.8 tok/sec</span>
-                          </div>
-                          <div className="pt-2">
-                            <Link
-                              to={`/agents/${session.agentId}/test`}
-                              className="text-xs font-semibold text-accent hover:underline flex items-center gap-1"
-                            >
-                              <span>Open in Agent Test Console</span>
-                              <ArrowRightIcon className="h-3 w-3" />
-                            </Link>
-                          </div>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
-          )}
-        </section>
-
-        {/* Section 2: Live Ingress Channels Accordion */}
-        <section aria-labelledby="live-channels-heading">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h2 id="live-channels-heading" className="text-base font-semibold text-ink">
-                Live Ingress Channels & Dispatchers ({channels.length})
-              </h2>
-              <p className="text-xs text-muted">
-                Active telecommunication trunks and web gateways serving traffic.
-              </p>
-            </div>
-          </div>
-
-          <Accordion
-            items={channels}
-            onReorder={setChannels}
-            enableReordering={true}
-            enableDragAndDrop={true}
-          >
-            {channels.map((ch, idx) => {
-              const isFirst = idx === 0;
-              const isLast = idx === channels.length - 1;
-
-              return (
-                <AccordionItem
-                  key={ch.id}
-                  id={ch.id}
-                  index={idx}
-                  isFirst={isFirst}
-                  isLast={isLast}
+        ) : (
+          <ul className="divide-y divide-line rounded-xl border border-line bg-surface">
+            {calls.map((c) => (
+              <li key={c.id}>
+                <Link
+                  to={callPath(c.agentId, c.id)}
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 transition-colors hover:bg-canvas focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
                 >
-                  <AccordionHeader
-                    id={ch.id}
-                    icon={<ServerIcon className="h-4 w-4 text-accent" />}
-                    title={ch.name}
-                    subtitle={
-                      <span>
-                        {ch.type} · {ch.activeCount} active connections of {ch.peakCapacity} limit
-                      </span>
-                    }
-                    badge={
-                      <div className="flex items-center gap-1.5">
-                        <StatusChip tone="success" dot>
-                          Healthy
-                        </StatusChip>
-                        <span className="font-mono text-xs text-muted">{ch.latencyMs}ms</span>
-                      </div>
-                    }
-                  />
-
-                  <AccordionContent>
-                    <div className="grid gap-4 sm:grid-cols-3 text-xs">
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">Ingress Target:</span>
-                        <code className="font-mono text-[11px] text-ink break-all mt-1 block">
-                          {ch.ingressUrl}
-                        </code>
-                      </div>
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">Current Concurrency:</span>
-                        <span className="text-sm font-semibold text-ink mt-1 block">
-                          {ch.activeCount} / {ch.peakCapacity}
-                        </span>
-                      </div>
-                      <div className="rounded-lg border border-line bg-surface p-3">
-                        <span className="text-muted block">Uptime:</span>
-                        <span className="text-sm font-semibold text-success mt-1 block">
-                          99.99% (Past 30 days)
-                        </span>
-                      </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-success" aria-hidden />
+                      <span className="text-sm font-medium text-ink">{c.caller}</span>
+                      <StatusChip>{channelName[c.channel]}</StatusChip>
                     </div>
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-        </section>
-      </div>
+                    <p className="mt-0.5 text-xs text-muted">
+                      <span title={c.agentId}>{nameOf(c.agentId)}</span> · {where(c)} · version {c.version}
+                    </p>
+                  </div>
+                  <span className="text-xs text-muted" title={c.started_at}>
+                    Started {timeAgo(c.started_at)}
+                    {c.duration_s > 0 ? ` · ${formatDuration(c.duration_s)} recorded so far` : ''}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
