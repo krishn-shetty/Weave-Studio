@@ -27,7 +27,7 @@ import {
 } from '../components/ui/accordion';
 import { formatBytes, formatDateTime } from '../utils/format';
 import { cn, inputClass } from '../utils/styles';
-import { api } from '../api/client';
+import { api, ApiError } from '../api/client';
 import { useStudio } from '../contexts/StudioContext';
 import type { KnowledgeBase, KnowledgeFile, KnowledgeSearchResult } from '../api/types';
 
@@ -209,14 +209,27 @@ export function Knowledge() {
     }
   };
 
-  const handleDeleteFile = async (fileName: string) => {
+  // Deleting asks the server first without force. A file a knowledge base reads is only deleted after a warning (the
+  // server's 409 says which base), and then with force=true.
+  const [pendingDelete, setPendingDelete] = useState<{ name: string; reason: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const deleteFile = async (fileName: string, force: boolean) => {
+    setDeleting(true);
     try {
-      await api.deleteKnowledgeFile(selectedAgentId, fileName, true);
+      await api.deleteKnowledgeFile(selectedAgentId, fileName, force);
       toast.success(`File ${fileName} deleted`);
+      setPendingDelete(null);
       fetchKnowledge();
-    } catch (err: any) {
-      toast.error('Delete failed', { description: err?.message });
+    } catch (err: unknown) {
+      if (!force && err instanceof ApiError && err.kind === 'conflict') setPendingDelete({ name: fileName, reason: err.message });
+      else toast.error('Delete failed', { description: err instanceof Error ? err.message : undefined });
+    } finally {
+      setDeleting(false);
     }
+  };
+  const handleDeleteFile = (file: KnowledgeFile) => {
+    if (file.used_by?.length) setPendingDelete({ name: file.name, reason: `Read by ${file.used_by.join(', ')}.` });
+    else void deleteFile(file.name, false);
   };
 
   return (
@@ -518,7 +531,7 @@ export function Knowledge() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteFile(file.name)}
+                            onClick={() => handleDeleteFile(file)}
                             className="h-8 w-8 p-0 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                             aria-label={`Delete ${file.name}`}
                           >
@@ -602,6 +615,22 @@ export function Knowledge() {
             />
           </div>
         </div>
+      </Dialog>
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => !deleting && setPendingDelete(null)}
+        title={`Delete ${pendingDelete?.name ?? 'this file'}?`}
+        description="A knowledge base reads this file."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>Keep it</Button>
+            <Button variant="danger" onClick={() => pendingDelete && void deleteFile(pendingDelete.name, true)} disabled={deleting}>
+              {deleting ? 'Deleting…' : 'Delete anyway'}
+            </Button>
+          </>
+        }>
+        <p className="text-sm text-ink-soft">{pendingDelete?.reason}</p>
+        <p className="mt-2 text-sm text-ink-soft">The index already built keeps answering from it, but the next build will fail until the file is taken out of the base’s sources (or uploaded again).</p>
       </Dialog>
     </div>
   );
