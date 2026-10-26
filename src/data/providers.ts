@@ -65,6 +65,12 @@ export const llmProviders: ProviderOption[] = [
 
 export const sttProviders: ProviderOption[] = [
 {
+  id: 'openai',
+  label: 'OpenAI',
+  secret: 'OPENAI_API_KEY',
+  models: [{ id: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe' }, { id: 'gpt-4o-mini-transcribe', label: 'GPT-4o mini Transcribe' }]
+},
+{
   id: 'deepgram',
   label: 'Deepgram',
   secret: 'DEEPGRAM_API_KEY',
@@ -94,11 +100,3 @@ export const ttsProviders: ProviderOption[] = [
   { id: 'eleven_flash_v2_5', label: 'Flash v2.5', note: 'Lowest latency.' },
   { id: 'eleven_multilingual_v2', label: 'Multilingual v2', note: 'Most natural, slower.' }]
 }];
-
-
-// Connection name → secret it needs on the server.
-export const connectionSecrets: Record<string, string> = {
-  crm: 'CRM_API_TOKEN',
-  calendar: 'CALENDAR_API_TOKEN',
-  helpdesk: 'HELPDESK_API_TOKEN'
-};

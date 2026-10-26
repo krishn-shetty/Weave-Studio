@@ -3,10 +3,9 @@ import { BracesIcon } from 'lucide-react';
 import type { AgentConfig, Path } from '../../../types/studio';
 import { StatusChip } from '../../ui/StatusChip';
 import { Button } from '../../ui/Button';
-import { connectionSecrets } from '../../../data/providers';
 import { fieldId } from '../../../utils/path';
 import { inputClass } from '../../../utils/styles';
-import { toolTypeLabel } from './toolTypes';
+import { toolLabel } from './toolTypes';
 
 interface ToolsEditorProps {
   readonly config: AgentConfig;
@@ -23,11 +22,12 @@ export function ToolsEditor({ config, disabled, update, onOpenJson }: ToolsEdito
         <li key={`${tool.id}-${i}`} id={fieldId(['tools', i])} className="scroll-mt-28 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <code className="font-mono text-[13px] font-medium text-ink">{tool.id}</code>
-              <StatusChip>{toolTypeLabel[tool.type] ?? tool.type}</StatusChip>
+              <StatusChip>{toolLabel(tool)}</StatusChip>
               {tool.type === 'mcp' && <StatusChip tone="warning">Not available yet</StatusChip>}
               {tool.connection &&
             <span className="text-xs text-muted">
-                  via <code className="font-mono">{tool.connection}</code> · needs <code className="font-mono">{connectionSecrets[tool.connection] ?? 'a secret'}</code>
+                  via <code className="font-mono">{tool.connection}</code>
+                  {typeof config.connections?.[tool.connection]?.base_url === 'string' && <> · {config.connections[tool.connection].base_url}</>}
                 </span>
             }
             </div>
@@ -35,7 +35,7 @@ export function ToolsEditor({ config, disabled, update, onOpenJson }: ToolsEdito
             <input
             id={`${fieldId(['tools', i, 'description'])}-input`}
             className={`${inputClass} mt-2`}
-            value={tool.description}
+            value={tool.description ?? ''}
             disabled={disabled}
             onChange={(e) => update(['tools', i, 'description'], e.target.value)} />
           

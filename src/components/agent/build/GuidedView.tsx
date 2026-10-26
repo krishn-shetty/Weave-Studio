@@ -5,7 +5,7 @@ import type { SettingGroupId } from '../../../data/settingsCatalog';
 import type { Path } from '../../../types/studio';
 import { GuidedSection } from './GuidedSection';
 import { ChannelsEditor } from './ChannelsEditor';
-import { toolTypeLabel } from './toolTypes';
+import { toolLabel } from './toolTypes';
 import { Field } from '../../ui/Field';
 import { Toggle } from '../../ui/Toggle';
 import { Segmented } from '../../ui/Segmented';
@@ -248,7 +248,7 @@ export function GuidedView({ editor, onMore, parts }: GuidedViewProps) {
                       {tool.type === 'mcp' && <StatusChip tone="warning">Not available yet</StatusChip>}
                     </p>
                     <p className="mt-0.5 text-xs text-muted">
-                      {toolTypeLabel[tool.type] ?? tool.type} · <code className="font-mono">{tool.id}</code>
+                      {toolLabel(tool)} · <code className="font-mono">{tool.id}</code>
                     </p>
                   </div>
                   <Toggle

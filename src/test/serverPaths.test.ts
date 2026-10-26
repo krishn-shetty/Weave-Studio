@@ -3,7 +3,7 @@ import type { AgentConfig } from '../types/studio';
 import { draftBody } from '../api/client';
 import { settingsCatalog } from '../data/settingsCatalog';
 import { starters } from '../data/starters';
-import { applyStarter } from '../utils/configFactory';
+import { applyStarter } from '../models/setup';
 import { putAt } from '../utils/path';
 import { parsePath } from '../utils/path';
 import { providerFollowUps } from '../utils/settingOptions';
@@ -70,8 +70,9 @@ describe('a new agent from a starter', () => {
 
   it('keeps the server’s models, runtime and ids, and sets what the starter is about', () => {
     const starter = starters[0];
-    const config = applyStarter(SERVER_DRAFT, { company: 'Acme', starter });
-    expect(config.defaults).toEqual(SERVER_DRAFT.defaults);
+    const config = applyStarter(SERVER_DRAFT, { company: 'Acme', starter, languages: ['en-GB'] });
+    expect(config.defaults?.models).toEqual(SERVER_DRAFT.defaults?.models);
+    expect(config.defaults?.language).toEqual({ primary: 'en-GB', speaks: ['en'] });
     expect(config.runtime).toEqual(SERVER_DRAFT.runtime);
     expect(config.meta?.id).toBe('new-agent');
     expect(config.persona?.company).toBe('Acme');

@@ -1,6 +1,13 @@
-import type { Tone, ToolDefinition } from '../types/studio';
+import type { Tone } from '../types/studio';
 
 export type StarterIcon = 'headset' | 'building' | 'book' | 'target' | 'calendar' | 'message' | 'blank';
+
+/** What a starter switches on, as the setup's "What it can do" switches make them (models/setup.ts): real config only. */
+export interface StarterActions {
+  endCall?: boolean;
+  handOver?: boolean;
+  details?: boolean;
+}
 
 export interface Starter {
   id: string;
@@ -12,45 +19,37 @@ export interface Starter {
   greeting: string;
   instructions: string;
   rules: string;
-  tools: ToolDefinition[];
+  actions: StarterActions;
   recommended?: boolean;
 }
 
+// The words a starter brings are a beginning: the setup asks the person to make the instructions their business's own.
 export const starters: Starter[] = [
 {
   id: 'customer_care',
   name: 'Customer care',
-  summary: 'Answers account and billing questions, reports outages, hands over to a person when asked.',
+  summary: 'Answers questions about the service, and passes people to the team when it can’t help.',
   icon: 'headset',
   personaName: 'Ada',
   tone: 'warm',
   recommended: true,
   greeting: "Hi, you've reached {company}. I'm {persona}. How can I help today?",
   instructions:
-  'Help callers with bills, payments and outages. Look up the account before answering anything specific. If the caller asks for a person, transfer them.',
-  rules: 'Be concise. Never guess account details — look them up. Offer a human when the caller asks.',
-  tools: [
-  { id: 'lookup_account', type: 'http', description: 'Find the caller’s account and latest bill', connection: 'crm' },
-  { id: 'check_outages', type: 'http', description: 'Check for outages at a postcode', connection: 'crm' },
-  { id: 'transfer_to_human', type: 'transfer', description: 'Transfer the call to the care team queue' },
-  { id: 'end_call', type: 'end_call', description: 'End the conversation politely' }]
-
+  'Help customers with questions about their account, bills and the service. Ask one question at a time. Never guess account details; if you cannot answer, offer to pass them to a person on the team.',
+  rules: 'Be concise. Offer a person when the customer asks for one.',
+  actions: { endCall: true, handOver: true }
 },
 {
   id: 'front_desk',
   name: 'Front desk',
-  summary: 'Greets callers, routes them to the right department and takes messages out of hours.',
+  summary: 'Greets callers, finds out what they need and takes their details when nobody is free.',
   icon: 'building',
   personaName: 'Sam',
   tone: 'neutral',
   greeting: 'Thank you for calling {company}. This is {persona}. Who would you like to speak to?',
-  instructions: 'Find out what the caller needs and route them to the right department. Take a message if nobody is available.',
+  instructions: 'Find out what the caller needs and who they want to reach. Pass them to a person when asked. If nobody is available, take their contact details so the team can call back.',
   rules: 'Keep it short. Confirm names and numbers by reading them back.',
-  tools: [
-  { id: 'transfer_to_department', type: 'transfer', description: 'Transfer to a department' },
-  { id: 'take_message', type: 'send_sms', description: 'Send the message to the team by text' },
-  { id: 'end_call', type: 'end_call', description: 'End the conversation politely' }]
-
+  actions: { endCall: true, handOver: true, details: true }
 },
 {
   id: 'knowledge_guide',
@@ -58,70 +57,57 @@ export const starters: Starter[] = [
   summary: 'Answers questions from your documents and says so when it does not know.',
   icon: 'book',
   personaName: 'Iris',
-  tone: 'neutral',
-  greeting: "Hi, I'm {persona}, {company}'s guide. Ask me anything about our products and policies.",
-  instructions: 'Answer only from the knowledge base. If the answer is not there, say you do not know and offer to take a question for the team.',
-  rules: 'Quote the source document title when you answer. Never invent policy details.',
-  tools: [
-  { id: 'search_docs', type: 'knowledge_search', description: 'Search the uploaded documents' },
-  { id: 'end_call', type: 'end_call', description: 'End the conversation politely' }]
-
+  tone: 'formal',
+  greeting: 'Hello, I can answer questions about {company}. What would you like to know?',
+  instructions: 'Answer only from the documents you are given. If the answer is not there, say you do not know and offer to take the question for the team.',
+  rules: 'Never invent policy details.',
+  actions: { endCall: true, details: true }
 },
 {
   id: 'lead_concierge',
   name: 'Lead concierge',
-  summary: 'Qualifies new enquiries, captures contact details and books a follow-up.',
+  summary: 'Qualifies website visitors and captures their contact details.',
   icon: 'target',
   personaName: 'Leo',
   tone: 'upbeat',
-  greeting: "Hi there, thanks for your interest in {company}! I'm {persona}. What brings you here today?",
-  instructions: 'Learn what the visitor needs, their timeline and budget, then capture their contact details with the form.',
+  greeting: 'Hi! Welcome to {company}. What brings you here today?',
+  instructions: 'Learn what the visitor needs, their timeline and budget, then take their contact details so the team can follow up.',
   rules: 'Ask one question at a time. Never pressure the visitor.',
-  tools: [
-  { id: 'create_lead', type: 'http', description: 'Create the lead in the CRM', connection: 'crm' },
-  { id: 'send_followup', type: 'send_sms', description: 'Text a follow-up link' }]
-
+  actions: { details: true }
 },
 {
   id: 'booking_concierge',
-  name: 'Booking concierge',
-  summary: 'Checks availability, books appointments and sends confirmations.',
+  name: 'Booking requests',
+  summary: 'Takes booking requests and the details the team needs to confirm them.',
   icon: 'calendar',
-  personaName: 'Nia',
+  personaName: 'Bea',
   tone: 'warm',
-  greeting: "Hello, you've reached {company} bookings. I'm {persona}. Would you like to make or change an appointment?",
-  instructions: 'Help callers find a slot, book it, and confirm by text. Read the date and time back before booking.',
-  rules: 'Always confirm the date, time and name before booking.',
-  tools: [
-  { id: 'check_availability', type: 'http', description: 'Look up free slots', connection: 'calendar' },
-  { id: 'book_slot', type: 'http', description: 'Book the chosen slot', connection: 'calendar' },
-  { id: 'send_confirmation', type: 'send_sms', description: 'Text the booking confirmation' }]
-
+  greeting: 'Hello, you’re through to {company} bookings. When would you like to come in?',
+  instructions: 'Help callers ask for a booking: the service they want, the day and time that suit them, and their name and number. Read the details back. Tell them the team will confirm.',
+  rules: 'Always confirm the date, time and name before you finish.',
+  actions: { endCall: true, details: true }
 },
 {
   id: 'feedback_collector',
-  name: 'Feedback collector',
-  summary: 'Runs a short satisfaction survey after a service and records the answers.',
+  name: 'Feedback',
+  summary: 'Asks a few short questions after a visit and thanks people for their time.',
   icon: 'message',
-  personaName: 'Kai',
-  tone: 'upbeat',
-  greeting: "Hi, it's {persona} from {company}. Do you have two minutes to tell us how we did?",
-  instructions: 'Ask three short questions: overall rating out of 5, what went well, and what we could improve. Thank them and end.',
+  personaName: 'Fay',
+  tone: 'warm',
+  greeting: 'Hi, this is {persona} from {company}. Do you have two minutes to tell us how we did?',
+  instructions: 'Ask three short questions: an overall rating out of 5, what went well, and what we could improve. Thank them and end the conversation.',
   rules: 'Keep it under two minutes. Accept a no gracefully.',
-  tools: [
-  { id: 'save_feedback', type: 'http', description: 'Store the answers', connection: 'helpdesk' },
-  { id: 'end_call', type: 'end_call', description: 'End the conversation politely' }]
-
+  actions: { endCall: true }
 },
 {
   id: 'blank',
   name: 'Blank',
-  summary: 'A minimal valid agent. Start from nothing and add what you need.',
+  summary: 'The server’s minimal agent. Start from nothing and add what you need.',
   icon: 'blank',
-  personaName: 'Assistant',
+  personaName: '',
   tone: 'neutral',
-  greeting: 'Hello, how can I help?',
+  greeting: '',
   instructions: '',
   rules: '',
-  tools: [{ id: 'end_call', type: 'end_call', description: 'End the conversation politely' }]
+  actions: {}
 }];

@@ -6,7 +6,8 @@ export type ChannelType = 'web_chat' | 'web_voice' | 'sip_voice' | 'whatsapp' | 
 export type CallChannel = 'web_chat' | 'web_voice' | 'phone';
 export const isWebChannel = (type: ChannelType): type is 'web_chat' | 'web_voice' => type === 'web_chat' || type === 'web_voice';
 export type Tone = 'warm' | 'neutral' | 'formal' | 'upbeat';
-export type ToolType = 'http' | 'end_call' | 'transfer' | 'knowledge_search' | 'send_sms' | 'mcp';
+/** Tool types the server schema accepts ($defs.tool). Ending a call or passing to a person is a builtin tool. */
+export type ToolType = 'builtin' | 'task' | 'http' | 'mcp' | 'knowledge' | 'code';
 export type VersionBump = 'major' | 'minor' | 'patch';
 export type PathSegment = string | number;
 export type Path = PathSegment[];
@@ -20,13 +21,19 @@ export interface AgentRole {
   tools?: string[];
   handoffs?: any[];
   kind?: string;
+  /** Knowledge bases (mode "inject") read on every caller turn. */
+  knowledge?: string[];
+  [key: string]: unknown;
 }
 
 export interface ToolDefinition {
   id: string;
   type: ToolType;
-  description: string;
+  description?: string;
   connection?: string;
+  /** For a builtin tool: end_call, transfer_or_callback, send_form, ... */
+  builtin?: string;
+  [key: string]: unknown;
 }
 
 export interface ChannelDefinition {
@@ -251,4 +258,4 @@ export interface HealthMetric {
   previous: HealthSnapshot;
   current_version: string;
   previous_version: string;
-}
+}

@@ -15,7 +15,7 @@ import type {
 } from '../types/studio';
 import { starters } from '../data/starters';
 import { useAuth } from './AuthContext';
-import { applyStarter } from '../utils/configFactory';
+import { applyStarter } from '../models/setup';
 import { randomHex } from '../utils/format';
 import { currentDeployments } from '../utils/agentStatus';
 import { api, ApiError } from '../api/client';
@@ -391,7 +391,8 @@ export function StudioProvider({ children }: StudioProviderProps) {
         config: created.config as AgentConfig,
       };
       if (starter.id !== 'blank') {
-        const saved = await api.saveDraft(id, applyStarter(draft.config, { company, starter }), created.revision);
+        const languages = typeof navigator === 'undefined' ? [] : navigator.languages ?? [navigator.language];
+        const saved = await api.saveDraft(id, applyStarter(draft.config, { company, starter, languages }), created.revision);
         draft = { bot_id: id, revision: saved.draft.revision, saved_at: saved.draft.saved_at, saved_by: saved.draft.saved_by, config: saved.draft.config as AgentConfig };
       }
 
