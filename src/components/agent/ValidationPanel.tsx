@@ -1,21 +1,18 @@
-import React, { useState } from 'react';
-import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, LoaderCircleIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react';
+import React from 'react';
+import { CircleAlertIcon, CircleCheckIcon, KeyRoundIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react';
 import type { AgentConfig, Issue, Path, ValidationReport } from '../../types/studio';
 import { describePath } from '../../utils/validate';
 import { missingSecrets } from '../../utils/agentStatus';
 import { cn } from '../../utils/styles';
-import { AiAssistantModal, type AiAssistantContext } from '../ui/AiAssistantModal';
 
 interface ValidationPanelProps {
   validation: ValidationReport;
   validating: boolean;
   config: AgentConfig;
   onGoTo: (path: Path) => void;
-  onApplyFix?: (patchedConfig: AgentConfig) => void;
 }
 
-export function ValidationPanel({ validation, validating, config, onGoTo, onApplyFix }: ValidationPanelProps) {
-  const [aiContext, setAiContext] = useState<AiAssistantContext | null>(null);
+export function ValidationPanel({ validation, validating, config, onGoTo }: ValidationPanelProps) {
   const missing = missingSecrets(validation.secrets_required);
   const clean = validation.valid && validation.warnings.length === 0 && validation.unsupported.length === 0;
 
@@ -50,15 +47,7 @@ export function ValidationPanel({ validation, validating, config, onGoTo, onAppl
           tone="danger"
           issues={validation.errors}
           config={config}
-          onGoTo={onGoTo}
-          onAskAi={(err) =>
-            setAiContext({
-              mode: 'fix_error',
-              error: err,
-              currentConfig: config,
-              onApplyFix,
-            })
-          } />
+          onGoTo={onGoTo} />
 
         }
 
@@ -69,15 +58,7 @@ export function ValidationPanel({ validation, validating, config, onGoTo, onAppl
           tone="warning"
           issues={validation.warnings}
           config={config}
-          onGoTo={onGoTo}
-          onAskAi={(warn) =>
-            setAiContext({
-              mode: 'fix_error',
-              error: warn,
-              currentConfig: config,
-              onApplyFix,
-            })
-          } />
+          onGoTo={onGoTo} />
 
         }
 
@@ -111,12 +92,6 @@ export function ValidationPanel({ validation, validating, config, onGoTo, onAppl
           </ul>
         </div>
       </div>
-
-      <AiAssistantModal
-        open={!!aiContext}
-        onClose={() => setAiContext(null)}
-        context={aiContext}
-      />
     </section>);
 
 }
@@ -128,10 +103,9 @@ interface IssueGroupProps {
   issues: Issue[];
   config: AgentConfig;
   onGoTo: (path: Path) => void;
-  onAskAi?: (issue: Issue) => void;
 }
 
-function IssueGroup({ title, hint, tone, issues, config, onGoTo, onAskAi }: IssueGroupProps) {
+function IssueGroup({ title, hint, tone, issues, config, onGoTo }: IssueGroupProps) {
   const Icon = tone === 'danger' ? CircleAlertIcon : TriangleAlertIcon;
   return (
     <div>
@@ -154,17 +128,6 @@ function IssueGroup({ title, hint, tone, issues, config, onGoTo, onAskAi }: Issu
                     <span className="block text-[13px] leading-snug text-ink">{issue.message}</span>
                   </span>
                 </button>
-                {onAskAi && (
-                  <button
-                    type="button"
-                    onClick={() => onAskAi(issue)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent hover:bg-accent-soft/80 shrink-0"
-                    title="Ask AI to propose a fix for this error"
-                  >
-                    <SparklesIcon className="h-2.5 w-2.5" />
-                    Fix with AI
-                  </button>
-                )}
               </div>
             </li>
           );

@@ -724,7 +724,7 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
 
   const stages = [
     { label: 'Build', path: `/agents/${agentId}/build`, icon: WrenchIcon, description: 'Prompts, tools & models' },
-    { label: 'Test', path: `/agents/${agentId}/test`, icon: PlayIcon, description: 'Simulated calls & evaluations' },
+    { label: 'Test', path: `/agents/${agentId}/test`, icon: PlayIcon, description: 'Test conversations & scenario runs' },
     { label: 'Release', path: `/agents/${agentId}/release`, icon: RocketIcon, description: 'Deployments & environments' },
     { label: 'Monitor', path: `/agents/${agentId}/monitor`, icon: EyeIcon, description: 'Traces, latency & costs' },
   ];

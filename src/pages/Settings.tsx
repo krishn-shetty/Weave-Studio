@@ -6,7 +6,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
 import { StatusChip } from '../components/ui/StatusChip';
-import { ToastShowcase } from '../components/ui/Toast';
 
 const roleText = {
   admin: 'Can edit, publish and deploy anywhere, including Production.',
@@ -85,18 +84,13 @@ export function Settings() {
         </div>
       </section>
 
-      <section aria-labelledby="notifications-preview" className="mt-8 border-b border-line pb-8">
-        <h2 id="notifications-preview" className="text-sm font-semibold text-ink mb-4">Notifications & Alerts</h2>
-        <ToastShowcase />
-      </section>
-
       <section aria-labelledby="security" className="mt-8">
-        <h2 id="security" className="text-sm font-semibold text-ink">How your session is protected</h2>
+        <h2 id="security" className="text-sm font-semibold text-ink">About your session</h2>
         <ul className="mt-4 space-y-2.5">
           {[
-          'Signed in through company single sign-on. No passwords are stored here.',
+          'This is a temporary sign-in: your email or phone is sent to the API as your name, and no password is checked yet.',
           'API keys and secrets live only on the server-side gateway, never in your browser.',
-          'Your role is enforced by the server, not just by hiding buttons.',
+          'Roles are not enforced by the server yet; until real sign-in arrives, everyone signed in here can edit, publish and deploy.',
           'Transcripts and prompts are always shown as plain text.'].
           map((t) =>
           <li key={t} className="flex gap-2.5 text-sm text-ink-soft">

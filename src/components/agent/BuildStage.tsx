@@ -14,7 +14,6 @@ import { ValidationPanel } from './ValidationPanel';
 import { ConcurrentEditBanner } from './ConcurrentEditBanner';
 import { ImportExportModal } from './build/ImportExportModal';
 import { ConflictDialog } from './ConflictDialog';
-import { AiAssistantModal, type AiAssistantContext } from '../ui/AiAssistantModal';
 import { fieldId } from '../../utils/path';
 
 export interface FocusRequest {
@@ -54,19 +53,6 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
   const [detailedGroup, setDetailedGroup] = useState<SettingGroupId | null>(null);
   const [importExportOpen, setImportExportOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
-  const [aiExplainContext, setAiExplainContext] = useState<AiAssistantContext | null>(null);
-
-  useEffect(() => {
-    const handleExplain = (e: CustomEvent<{ name: string; desc: string }>) => {
-      setAiExplainContext({
-        mode: 'explain',
-        settingName: e.detail.name,
-        settingDescription: e.detail.desc,
-      });
-    };
-    window.addEventListener('ai-explain-setting', handleExplain as EventListener);
-    return () => window.removeEventListener('ai-explain-setting', handleExplain as EventListener);
-  }, []);
 
   const setView = useCallback(
     (v: EditorView) => {
@@ -148,7 +134,6 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
             validating={editor.validating}
             config={editor.config}
             onGoTo={focusPath}
-            onApplyFix={editor.replaceConfig}
           />
         </aside>
       </div>
@@ -164,12 +149,6 @@ export function BuildStage({ editor, focusRequest }: BuildStageProps) {
       {editor.conflict && (
         <ConflictDialog editor={editor} />
       )}
-
-      <AiAssistantModal
-        open={!!aiExplainContext}
-        onClose={() => setAiExplainContext(null)}
-        context={aiExplainContext}
-      />
     </div>);
 
 }

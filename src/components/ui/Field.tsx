@@ -1,5 +1,5 @@
 import React from 'react';
-import { CircleAlertIcon, SparklesIcon, TriangleAlertIcon } from 'lucide-react';
+import { CircleAlertIcon, TriangleAlertIcon } from 'lucide-react';
 import { cn } from '../../utils/styles';
 
 interface FieldProps {
@@ -26,15 +26,6 @@ export function Field({ id, label, help, error, warning, technicalName, showTech
           {recommended && <span className="text-xs text-accent">Recommended: {recommended}</span>}
           {!showTechnical && technicalName && <span className="sr-only">({technicalName})</span>}
         </div>
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('ai-explain-setting', { detail: { name: label, desc: help } }))}
-          className="flex items-center gap-1 text-[11px] text-muted hover:text-accent rounded transition-colors px-1 py-0.5"
-          title={`Explain "${label}" with AI`}
-        >
-          <SparklesIcon className="h-3 w-3" />
-          <span className="text-[10px]">Explain</span>
-        </button>
       </div>
       {children}
       {error ?

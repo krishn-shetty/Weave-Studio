@@ -1,14 +1,47 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRightIcon, CheckCircle2Icon, CircleIcon, RocketIcon, SparklesIcon, XIcon } from 'lucide-react';
 import { useStudio } from '../../contexts/StudioContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { api } from '../../api/client';
 import { Button } from '../ui/Button';
 import { cn } from '../../utils/styles';
 
 interface FirstRunChecklistProps {
   onOpenCreate: () => void;
   onDismiss: () => void;
+}
+
+type Tested = 'checking' | 'yes' | 'no' | 'unknown';
+
+/** Has any agent been tried: a test run, or a test conversation (a call on the draft)? Read from the API. */
+function useHasBeenTested(agentIds: string[]): Tested {
+  const [tested, setTested] = useState<Tested>('checking');
+  const key = agentIds.join('|');
+
+  useEffect(() => {
+    const ids = key ? key.split('|') : [];
+    if (ids.length === 0) {
+      setTested('no');
+      return;
+    }
+    const controller = new AbortController();
+    const opts = { signal: controller.signal };
+    setTested('checking');
+    const checks = ids.map(async (id) => {
+      const [runs, calls] = await Promise.all([api.listTestRuns(id, 1, opts), api.listCalls(id, { limit: 20 }, opts)]);
+      return runs.length > 0 || calls.calls.some((call) => call.ref === 'draft');
+    });
+    Promise.allSettled(checks).then((results) => {
+      if (controller.signal.aborted) return;
+      if (results.some((r) => r.status === 'fulfilled' && r.value)) setTested('yes');
+      else if (results.some((r) => r.status === 'rejected')) setTested('unknown');
+      else setTested('no');
+    });
+    return () => controller.abort();
+  }, [key]);
+
+  return tested;
 }
 
 export function FirstRunChecklist({ onOpenCreate, onDismiss }: FirstRunChecklistProps) {
@@ -19,7 +52,7 @@ export function FirstRunChecklist({ onOpenCreate, onDismiss }: FirstRunChecklist
   // Evaluate progress
   const hasAgent = agents.length > 0;
   const focusAgent = agents[0];
-  const hasTested = true; // In demo/seed or calls exist
+  const tested = useHasBeenTested(agents.map((a) => a.id));
   const hasPublished = agents.some((a) => a.versions.length > 0);
   const hasDeployed = agents.some((a) => a.deployments.some((d) => d.status === 'active'));
 
@@ -27,7 +60,7 @@ export function FirstRunChecklist({ onOpenCreate, onDismiss }: FirstRunChecklist
     {
       id: 'create',
       title: '1. Create your agent',
-      desc: 'Pick an enterprise starter or describe what you need in plain English.',
+      desc: 'Pick a starter and give it a name.',
       completed: hasAgent,
       cta: 'Create agent',
       action: onOpenCreate,
@@ -35,8 +68,11 @@ export function FirstRunChecklist({ onOpenCreate, onDismiss }: FirstRunChecklist
     {
       id: 'test',
       title: '2. Test live conversation',
-      desc: 'Talk to your draft via web text chat or voice with live execution trace.',
-      completed: hasTested,
+      desc:
+        tested === 'unknown'
+          ? 'Could not check for test conversations or test runs just now.'
+          : 'Talk to your draft via web text chat or voice with live execution trace.',
+      completed: tested === 'yes',
       cta: 'Open Test console',
       action: () => focusAgent && navigate(`/agents/${focusAgent.id}/test`),
     },
@@ -120,7 +156,9 @@ export function FirstRunChecklist({ onOpenCreate, onDismiss }: FirstRunChecklist
             <div>
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-ink">{step.title}</span>
-                {step.completed ? (
+                {step.id === 'test' && tested === 'checking' ? (
+                  <span className="h-4 w-4 animate-pulse rounded-full bg-subtle" aria-label="Checking" />
+                ) : step.completed ? (
                   <CheckCircle2Icon className="h-4 w-4 text-success" />
                 ) : (
                   <CircleIcon className="h-4 w-4 text-muted" />

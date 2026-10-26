@@ -5,14 +5,12 @@ import {
   DownloadIcon,
   FlaskConicalIcon,
   RefreshCwIcon,
-  SparklesIcon,
 } from "lucide-react";
 import { toast } from "../components/ui/Toast";
 import { useStudio } from "../contexts/StudioContext";
 import { StatusChip } from "../components/ui/StatusChip";
 import { Button } from "../components/ui/Button";
 import { Dialog } from "../components/ui/Dialog";
-import { AiAssistantModal } from "../components/ui/AiAssistantModal";
 import { channelName, outcomeMeta } from "../components/calls/CallsTable";
 import { formatDateTime, formatDuration, formatOffset } from "../utils/format";
 import { cn, inputClass } from "../utils/styles";
@@ -208,7 +206,6 @@ export function CallDetail() {
   const [scenarioName, setScenarioName] = useState(
     call ? `Scenario from call ${call.id} (${call.caller})` : "",
   );
-  const [aiOpen, setAiOpen] = useState(false);
 
   useEffect(() => {
     if (call) setScenarioName(`Scenario from call ${call.id} (${call.caller})`);
@@ -308,14 +305,6 @@ export function CallDetail() {
           </a>
           <Button
             variant="secondary"
-            onClick={() => setAiOpen(true)}
-            title="Diagnose this call and suggest prompt improvements with AI"
-          >
-            <SparklesIcon className="h-4 w-4 text-accent" />
-            AI Prompt Fix
-          </Button>
-          <Button
-            variant="secondary"
             onClick={() => setScenarioOpen(true)}
             title="Convert this call's conversation and tool trace into a repeatable automated test scenario"
           >
@@ -360,17 +349,6 @@ export function CallDetail() {
           />
         </div>
       </Dialog>
-
-      <AiAssistantModal
-        open={aiOpen}
-        onClose={() => setAiOpen(false)}
-        context={{
-          mode: "summarise_call",
-          callTranscript: transcriptLines
-            .map((t) => `${t.speaker}: ${t.text}`)
-            .join("\n"),
-        }}
-      />
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_320px]">
         <section aria-labelledby="transcript-title">

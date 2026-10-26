@@ -34,7 +34,6 @@ interface CreateInput {
   name: string;
   company: string;
   starterId: string;
-  customConfig?: AgentConfig;
 }
 
 interface StudioValue {
@@ -363,9 +362,9 @@ export function StudioProvider({ children }: StudioProviderProps) {
   const getAgent = useCallback((id: string) => agents.find((a) => a.id === id), [agents]);
 
   const createAgent = useCallback(
-    async ({ id, name, company, starterId, customConfig }: CreateInput): Promise<Agent> => {
+    async ({ id, name, company, starterId }: CreateInput): Promise<Agent> => {
       const starter = starters.find((s) => s.id === starterId) ?? starters[0];
-      const initialConfig = customConfig ?? buildConfig({ id, name, company, starter });
+      const initialConfig = buildConfig({ id, name, company, starter });
 
       // Call real backend API to create bot
       await api.createBot({ id, name });
@@ -389,7 +388,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       };
 
       commit([agent, ...agentsRef.current]);
-      log('created', id, customConfig ? 'Created with AI proposal' : `Created from ${starter.name} starter`);
+      log('created', id, `Created from ${starter.name} starter`);
       return agent;
     },
     [commit, log, who]
