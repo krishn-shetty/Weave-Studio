@@ -670,3 +670,9 @@ export function botIdProblem(id: string, taken: string[]): string {
   if (taken.includes(id)) return 'Another agent has this id.';
   return '';
 }
+
+/** The setup step where a readiness step is done, when the setup has one ('' otherwise: its own page). */
+export function setupStepForReadiness(readinessId: string): StepId | '' {
+  const map: Record<string, StepId> = { prompt: 'purpose', hello: 'purpose', voice: 'voice', abilities: 'actions', knowledge: 'knowledge', publish: 'live', deploy: 'live' };
+  return map[readinessId] ?? '';
+}

@@ -11,7 +11,7 @@ export type ToolType = 'builtin' | 'task' | 'http' | 'mcp' | 'knowledge' | 'code
 export type VersionBump = 'major' | 'minor' | 'patch';
 export type PathSegment = string | number;
 export type Path = PathSegment[];
-export type StageId = 'overview' | 'build' | 'test' | 'release' | 'monitor';
+export type StageId = 'overview' | 'build' | 'test' | 'release' | 'monitor' | 'setup';
 export type EditorView = 'guided' | 'detailed' | 'canvas' | 'json';
 
 export interface AgentRole {

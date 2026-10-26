@@ -41,7 +41,7 @@ import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { useDraftValidations } from '../hooks/useServerValidation';
 import { useAgentsReadiness } from '../hooks/useReadiness';
 import type { Readiness } from '../models/readiness';
-import { targetPath } from '../models/agentPages';
+import { useStepLink } from '../hooks/useStepLink';
 import { ProgressRing } from '../components/agent/Readiness';
 import type { ValidationView } from '../utils/serverValidation';
 import { currentDeployments, draftChangeCount, environments, envShort, envLabel, latestVersion } from '../utils/agentStatus';
@@ -827,13 +827,14 @@ function ChecksBadge({ view, className }: { view: ValidationView | undefined; cl
 
 /** How far an agent is from live, and its next step (the readiness model), as a link to where it is done. */
 function NextStepCell({ agentId, readiness }: { agentId: string; readiness: Readiness }) {
+  const link = useStepLink(agentId);
   const next = readiness.next;
   return (
     <div className="flex items-center gap-2">
       <ProgressRing done={readiness.done} total={readiness.total} size={22} />
       {next ?
       <Link
-        to={targetPath(agentId, next.target)}
+        to={link(next)}
         onClick={(e) => e.stopPropagation()}
         title={next.text}
         className={cn('truncate text-[13px] font-medium hover:underline', next.state === 'blocked' ? 'text-danger' : 'text-accent')}>

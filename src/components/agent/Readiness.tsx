@@ -5,6 +5,7 @@ import type { Readiness, ReadinessStep, StepState } from '../../models/readiness
 import type { ShipAction, ShipFlow } from '../../models/shipFlow';
 import { targetPath, type PageTarget } from '../../models/agentPages';
 import { Button } from '../ui/Button';
+import { useStepLink } from '../../hooks/useStepLink';
 import { cn } from '../../utils/styles';
 
 /** A ring that fills as steps are done. */
@@ -41,7 +42,8 @@ export function StepIcon({ state, className }: { state: StepState; className?: s
 
 function useGo(agentId: string) {
   const navigate = useNavigate();
-  return (target: PageTarget) => navigate(targetPath(agentId, target));
+  const link = useStepLink(agentId);
+  return { step: (s: ReadinessStep) => navigate(link(s)), target: (t: PageTarget) => navigate(targetPath(agentId, t)) };
 }
 
 /** "Getting it ready": the progress ring and the one next step (the agent header's card). */
@@ -56,7 +58,7 @@ export function ReadinessCard({ agentId, readiness }: { agentId: string; readine
         {next ?
         <button
           type="button"
-          onClick={() => go(next.target)}
+          onClick={() => go.step(next)}
           className={cn('flex max-w-[260px] items-center gap-1 truncate text-left text-[13px] font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 rounded', next.state === 'blocked' ? 'text-danger' : 'text-accent')}
           title={next.text}>
             <span className="truncate">Next: {next.label}</span>
@@ -76,7 +78,7 @@ export function ReadinessChecklist({ agentId, readiness, compact = false }: { ag
   return (
     <ol className="divide-y divide-line rounded-xl border border-line bg-surface">
       {readiness.steps.map((step) =>
-      <ChecklistRow key={step.id} step={step} isNext={readiness.next?.id === step.id} compact={compact} onGo={() => go(step.target)} />
+      <ChecklistRow key={step.id} step={step} isNext={readiness.next?.id === step.id} compact={compact} onGo={() => go.step(step)} />
       )}
     </ol>);
 
@@ -104,7 +106,7 @@ function ChecklistRow({ step, isNext, compact, onGo }: { step: ReadinessStep; is
 /** Saved -> Valid -> Tested -> Published -> Deployed, and the one button for what to do next (Release, Overview). */
 export function ShipStrip({ agentId, ship, onSave, onPublish }: { agentId: string; ship: ShipFlow; onSave: () => void; onPublish: () => void }) {
   const go = useGo(agentId);
-  const run = (a: ShipAction) => a.kind === 'save' ? onSave() : a.kind === 'publish' ? onPublish() : go(a.target);
+  const run = (a: ShipAction) => a.kind === 'save' ? onSave() : a.kind === 'publish' ? onPublish() : go.target(a.target);
   return (
     <section aria-labelledby="ship-title" className="rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">

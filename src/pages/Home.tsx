@@ -28,7 +28,7 @@ import { AuditTrailDialog } from '../components/ui/AuditTrailDialog';
 import { currentDeployments, environments, envLabel, envShort, pendingDeployment } from '../utils/agentStatus';
 import { useAgentsReadiness } from '../hooks/useReadiness';
 import { ProgressRing, ReadinessChecklist, StepIcon } from '../components/agent/Readiness';
-import { targetPath } from '../models/agentPages';
+import { useStepLink } from '../hooks/useStepLink';
 import { timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
 
@@ -79,6 +79,7 @@ export function Home() {
   );
   // The same readiness model as the agent's own pages and the agent list.
   const focusState = useAgentsReadiness(focus ? [focus] : [])[focus?.id ?? ''];
+  const stepLink = useStepLink(focus?.id ?? '');
 
   const totalPages = Math.max(1, Math.ceil(liveAgents.length / livePageSize));
   const safePage = Math.min(livePage, totalPages);
@@ -131,7 +132,7 @@ export function Home() {
             {focusState.readiness.next ?
             <Button
               variant={focusState.readiness.next.state === 'blocked' ? 'danger' : 'primary'}
-              onClick={() => focusState.readiness.next && navigate(targetPath(focus.id, focusState.readiness.next.target))}>
+              onClick={() => focusState.readiness.next && navigate(stepLink(focusState.readiness.next))}>
                 Next: {focusState.readiness.next.label}
                 <ArrowRightIcon className="h-4 w-4" aria-hidden />
               </Button> :

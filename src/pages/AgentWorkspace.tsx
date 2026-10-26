@@ -17,9 +17,10 @@ import { Button } from '../components/ui/Button';
 import { useStudio } from '../contexts/StudioContext';
 import { useReadiness } from '../hooks/useReadiness';
 import { OverviewStage } from '../components/agent/OverviewStage';
+import { SetupWizard } from '../components/agent/setup/SetupWizard';
 import { BUILD_SECTIONS, sectionOfPath, targetPath, type BuildSection } from '../models/agentPages';
 
-const stageIds: StageId[] = ['overview', 'build', 'test', 'release', 'monitor'];
+const stageIds: StageId[] = ['overview', 'build', 'test', 'release', 'monitor', 'setup'];
 
 export function AgentWorkspace() {
   const params = useParams();
@@ -92,13 +93,14 @@ export function AgentWorkspace() {
       <div className="flex-1">
         <ErrorBoundary fallbackTitle="An error occurred in this workspace stage">
           {stage === 'overview' && readiness && <OverviewStage editor={editor} state={readiness} onPublish={openPublish} />}
+          {stage === 'setup' && <SetupWizard editor={editor} step={sectionParam} />}
           {stage === 'build' && <BuildStage editor={editor} section={section} readiness={readiness?.readiness ?? null} focusRequest={focusRequest} />}
           {stage === 'test' && <TestStage editor={editor} onGoToField={goToField} />}
           {stage === 'release' && <ReleaseStage editor={editor} onPublish={openPublish} ship={readiness?.ship ?? null} />}
           {stage === 'monitor' && <MonitorStage editor={editor} />}
         </ErrorBoundary>
       </div>
-      {readiness && <NextStepBar agentId={agentId} readiness={readiness.readiness} />}
+      {readiness && stage !== 'setup' && <NextStepBar agentId={agentId} readiness={readiness.readiness} />}
       <ConflictDialog editor={editor} />
       <SaveFirstDialog editor={editor} />
       <LeaveGuard editor={editor} agentId={agentId} />

@@ -18,6 +18,8 @@ import { Field } from "../ui/Field";
 import { StatusChip } from "../ui/StatusChip";
 import { starters, StarterIcon } from "../../data/starters";
 import { useStudio } from "../../contexts/StudioContext";
+import { botIdProblem, freeBotId } from "../../models/setup";
+import { startSetup } from "../../utils/setupProgress";
 import { cn, inputClass, inputErrorClass } from "../../utils/styles";
 
 const icons: Record<StarterIcon, typeof BoxIcon> = {
@@ -30,19 +32,6 @@ const icons: Record<StarterIcon, typeof BoxIcon> = {
   blank: FileIcon
 };
 
-const RESERVED = ['new', 'admin', 'api', 'bots', 'draft', 'latest', 'schema', 'health', 'validate', 'environments', 'development', 'staging', 'production'];
-
-const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^[^a-z]+/, '').replace(/-+$/, '').slice(0, 64);
-
-function idProblem(id: string, taken: string[]): string | null {
-  if (!id) return 'Choose an id.';
-  if (!/^[a-z]/.test(id)) return 'Start with a lowercase letter.';
-  if (!/^[a-z][a-z0-9_-]*$/.test(id)) return 'Use only lowercase letters, digits, - and _.';
-  if (id.length > 64) return 'Keep it to 64 characters or fewer.';
-  if (RESERVED.includes(id)) return `“${id}” is reserved. Pick another id.`;
-  if (taken.includes(id)) return 'An agent with this id already exists.';
-  return null;
-}
 
 interface CreateAgentDialogProps {
   open: boolean;
@@ -74,14 +63,13 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
   }, [open]);
 
   const taken = useMemo(() => agents.map((a) => a.id), [agents]);
-  const problem = idProblem(id, taken);
+  // The id is made from the name and is always free ("-2" when taken); it can be changed under Advanced.
+  const effectiveId = idTouched ? id : name.trim() ? freeBotId(name, taken) : '';
+  const problem = effectiveId ? botIdProblem(effectiveId, taken) || null : name.trim() ? 'Give it an id.' : null;
   const nameProblem = name.trim() ? null : 'Give the agent a name.';
-  const companyProblem = company.trim() ? null : 'Add your company name.';
+  const companyProblem = null;
 
-  const handleName = (v: string) => {
-    setName(v);
-    if (!idTouched) setId(slugify(v));
-  };
+  const handleName = (v: string) => setName(v);
 
   const handleCreateStarter = async () => {
     setSubmitted(true);
@@ -89,16 +77,17 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
     setCreating(true);
     try {
       await createAgent({
-        id,
+        id: effectiveId,
         name: name.trim(),
         company: company.trim(),
         starterId
       });
       toast.success(`${name.trim()} created`, {
-        description: 'Draft saved. Next: make it yours, then test it.'
+        description: 'Next: a few steps to make it yours, try it and put it live.'
       });
+      startSetup(effectiveId);
       onClose();
-      navigate(`/agents/${id}/build`);
+      navigate(`/agents/${effectiveId}/setup/purpose`);
     } catch (err: any) {
       toast.error('Could not create agent', { description: err?.message || 'Server rejected creation' });
     } finally {
@@ -112,7 +101,7 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
       onClose={onClose}
       size="xl"
       title="Create an agent"
-      description="Pick a starter, name it, and Studio saves a first draft you can change."
+      description="Pick a starter and name it. The server makes the agent, and a few steps make it yours."
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={creating}>
@@ -184,7 +173,7 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
           </Field>
           <Field
             id="create-company"
-            label="Company name"
+            label="Company name (optional)"
             help="The agent introduces itself with this."
             error={submitted ? companyProblem ?? undefined : undefined}
           >
@@ -196,26 +185,30 @@ export function CreateAgentDialog({ open, onClose }: CreateAgentDialogProps) {
               placeholder="Northwind Energy"
             />
           </Field>
-          <Field
-            id="create-id"
-            label="Agent id"
-            help="Lowercase letters, digits, - and _. Starts with a letter. Can’t be changed later."
-            error={(submitted || idTouched) && problem ? problem : undefined}
-          >
-            <input
-              id="create-id-input"
-              className={cn(inputClass, 'font-mono', (submitted || idTouched) && problem && inputErrorClass)}
-              value={id}
-              maxLength={64}
-              onChange={(e) => {
-                setIdTouched(true);
-                setId(e.target.value);
-              }}
-              placeholder="customer-care"
-              spellCheck={false}
-              autoComplete="off"
-            />
-          </Field>
+          <details className="rounded-lg border border-line px-3 py-2" open={idTouched || (submitted && !!problem)}>
+            <summary className="cursor-pointer text-[13px] font-medium text-ink-soft">Advanced</summary>
+            <Field
+              id="create-id"
+              label="Agent id"
+              help="Made from the name. Lowercase letters, digits, - and _; starts with a letter. Can’t be changed later."
+              error={(submitted || idTouched) && problem ? problem : undefined}
+              className="mt-2"
+            >
+              <input
+                id="create-id-input"
+                className={cn(inputClass, 'font-mono', (submitted || idTouched) && problem && inputErrorClass)}
+                value={effectiveId}
+                maxLength={64}
+                onChange={(e) => {
+                  setIdTouched(true);
+                  setId(e.target.value);
+                }}
+                placeholder="customer-care"
+                spellCheck={false}
+                autoComplete="off"
+              />
+            </Field>
+          </details>
         </div>
       </div>
     </Dialog>

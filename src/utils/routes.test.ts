@@ -21,3 +21,24 @@ describe('routes', () => {
     expect(leavesAgent('gm', '/')).toBe(true);
   });
 });
+
+import { inSetup } from './setupProgress';
+import { setupStepForReadiness } from '../models/setup';
+
+describe('the guided setup opens a step while the agent is being set up', () => {
+  const p = (over: Partial<{ step: ''; tried: boolean; finished: boolean; known: boolean }>) => ({ step: '' as const, tried: false, finished: false, known: false, ...over });
+  it('started here and not finished, or never published: in setup', () => {
+    expect(inSetup(p({ known: true }), true)).toBe(true);
+    expect(inSetup(p({}), false)).toBe(true);
+  });
+  it('finished, or published and never set up here: its own pages', () => {
+    expect(inSetup(p({ known: true, finished: true }), false)).toBe(false);
+    expect(inSetup(p({}), true)).toBe(false);
+  });
+  it('readiness steps map to the setup step that does them', () => {
+    expect(setupStepForReadiness('prompt')).toBe('purpose');
+    expect(setupStepForReadiness('voice')).toBe('voice');
+    expect(setupStepForReadiness('deploy')).toBe('live');
+    expect(setupStepForReadiness('checks')).toBe('');
+  });
+});

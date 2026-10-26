@@ -1,7 +1,10 @@
 import React from 'react';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import type { AgentReadiness } from '../../hooks/useReadiness';
+import { Link } from 'react-router-dom';
 import { ProgressRing, ReadinessChecklist, ShipStrip } from './Readiness';
+import { useSetupOpen } from '../../hooks/useStepLink';
+import { readProgress } from '../../utils/setupProgress';
 
 interface OverviewStageProps {
   editor: DraftEditor;
@@ -12,6 +15,7 @@ interface OverviewStageProps {
 /** The agent's first page: how far it is from live, every step, and where each one is done. */
 export function OverviewStage({ editor, state, onPublish }: OverviewStageProps) {
   const agent = editor.agent;
+  const setupOpen = useSetupOpen(agent?.id ?? '');
   if (!agent) return null;
   const { readiness, ship } = state;
   const checking = editor.validationView.status !== 'checked' || state.facts?.loading || !state.facts;
@@ -20,6 +24,11 @@ export function OverviewStage({ editor, state, onPublish }: OverviewStageProps) 
       <section aria-labelledby="ready-title" className="flex flex-wrap items-center gap-5">
         <ProgressRing done={readiness.done} total={readiness.total} size={64} label={`${readiness.done} of ${readiness.total} steps done`} />
         <div className="min-w-0 flex-1">
+          {setupOpen &&
+          <Link to={`/agents/${encodeURIComponent(agent.id)}/setup/${readProgress(agent.id).step || 'purpose'}`} className="float-right inline-flex items-center gap-1.5 rounded-md bg-accent px-3 py-2 text-sm font-medium text-white hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+              {readProgress(agent.id).known ? 'Continue setup' : 'Set it up step by step'}
+            </Link>
+          }
           <h2 id="ready-title" className="text-lg font-semibold tracking-tight text-ink">Getting it ready</h2>
           <p className="mt-0.5 text-sm text-muted">
             {readiness.done} of {readiness.total} steps done.{' '}

@@ -2,13 +2,14 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRightIcon } from 'lucide-react';
 import type { Readiness } from '../../models/readiness';
-import { targetPath } from '../../models/agentPages';
+import { useStepLink } from '../../hooks/useStepLink';
 import { Button } from '../ui/Button';
 import { StepIcon } from './Readiness';
 
 /** The next step from the readiness model, at the foot of every page of the agent. */
 export function NextStepBar({ agentId, readiness }: { agentId: string; readiness: Readiness }) {
   const navigate = useNavigate();
+  const link = useStepLink(agentId);
   const next = readiness.next;
   return (
     <div className="border-t border-line bg-surface">
@@ -19,7 +20,7 @@ export function NextStepBar({ agentId, readiness }: { agentId: string; readiness
               <StepIcon state={next.state} className="mt-0.5" />
               <span><span className="font-medium text-ink">Next: {next.label}.</span> {next.text}</span>
             </p>
-            <Button variant="secondary" onClick={() => navigate(targetPath(agentId, next.target))}>
+            <Button variant="secondary" onClick={() => navigate(link(next))}>
               Go there
               <ArrowRightIcon className="h-4 w-4" aria-hidden />
             </Button>
