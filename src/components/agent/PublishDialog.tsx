@@ -95,7 +95,7 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
       title={report.valid ? 'Publish a new version' : 'This draft can’t be published yet'}
       description={
       report.valid ?
-      `Freezes the saved draft (revision ${editor.baseRevision}). ${latest ? `${changes} ${changes === 1 ? 'change' : 'changes'} since ${latest.version}.` : 'This will be the first version.'}` :
+      `Freezes the saved draft (revision ${editor.baseRevision}). ${!latest ? 'This will be the first version.' : changes === null ? `Changes since ${latest.version} could not be counted.` : `${changes} ${changes === 1 ? 'change' : 'changes'} since ${latest.version}.`}` :
       'Saving always works, but publishing needs a draft with no errors. Fix these and try again.'
       }
       footer={

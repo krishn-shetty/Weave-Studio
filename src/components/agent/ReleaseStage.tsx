@@ -21,13 +21,20 @@ interface ReleaseStageProps {
 
 export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
   const agent = editor.agent!;
-  const { rollback, restoreVersion, logAudit } = useStudio();
+  const { rollback, restoreVersion, logAudit, loadVersionConfig } = useStudio();
   const { can } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
-  const handleExportVersion = (v: Version) => {
-    const jsonStr = JSON.stringify(v.config, null, 2);
+  const handleExportVersion = async (v: Version) => {
+    let config;
+    try {
+      config = await loadVersionConfig(agent.id, v.version);
+    } catch (err: unknown) {
+      toast.error(`Could not export ${v.version}`, { description: err instanceof Error ? err.message : undefined });
+      return;
+    }
+    const jsonStr = JSON.stringify(config, null, 2);
     const blob = new Blob([jsonStr], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -138,11 +145,11 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
                   Draft <span className="font-mono text-xs font-normal text-muted">rev {agent.draft.revision}</span>
                 </p>
                 <p className="text-xs text-muted">
-                  {latest ? changes ? `${changes} unpublished ${changes === 1 ? 'change' : 'changes'} since ${latest.version}` : `Same as ${latest.version}` : 'Never published'}
+                  {!latest ? 'Never published' : changes === null ? `Changes since ${latest.version} could not be counted` : changes ? `${changes} unpublished ${changes === 1 ? 'change' : 'changes'} since ${latest.version}` : `Same as ${latest.version}`}
                 </p>
               </div>
               <div className="flex gap-2">
-                {latest && changes > 0 &&
+                {latest && changes !== 0 &&
                 <Button size="sm" variant="ghost" onClick={() => setCompare({ a: latest.version, b: 'draft' })}>Compare</Button>
                 }
                 <Button size="sm" variant="secondary" onClick={onPublish} disabled={!can('publish')}>Publish</Button>
@@ -249,7 +256,7 @@ export function ReleaseStage({ editor, onPublish }: ReleaseStageProps) {
         }>
         
         <p className="text-sm text-ink-soft">
-          {changes > 0 ? `Your draft has ${changes} unpublished ${changes === 1 ? 'change' : 'changes'} that will be replaced. Publish first if you want to keep them.` : 'Your draft has no unpublished changes, so nothing is lost.'}
+          {changes === null ? 'Any unpublished changes in your draft will be replaced. Publish first if you want to keep them.' : changes > 0 ? `Your draft has ${changes} unpublished ${changes === 1 ? 'change' : 'changes'} that will be replaced. Publish first if you want to keep them.` : 'Your draft has no unpublished changes, so nothing is lost.'}
         </p>
       </Dialog>
     </div>);

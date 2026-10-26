@@ -9,6 +9,7 @@ import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { currentDeployments, environments, envLabel, missingSecrets } from '../../../utils/agentStatus';
 import { validateConfig } from '../../../utils/validate';
+import { useVersionConfig } from '../../../hooks/useVersionConfig';
 import { cn, easeOut, inputClass } from '../../../utils/styles';
 
 interface DeployDialogProps {
@@ -51,7 +52,9 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   }, [deployment?.status, deployment?.version, deployment?.environment]);
 
   const v = agent.versions.find((x) => x.version === version);
-  const report = v ? validateConfig(v.config) : null;
+  const versionConfig = useVersionConfig(agent, v?.version);
+  const vConfig = versionConfig.config;
+  const report = vConfig ? validateConfig(vConfig) : null;
   const missing = report ? missingSecrets(report.secrets_required) : [];
   const current = currentDeployments(agent)[env];
   const isProd = env === 'production';
@@ -59,7 +62,7 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   const alreadyLive = current?.version === version;
   const confirmOk = !isProd || confirmText.trim() === agent.id;
 
-  const checks: CheckRow[] = report && v ?
+  const checks: CheckRow[] = report && vConfig ?
   [
   missing.length ?
   { ok: false, title: `${missing.length} ${missing.length === 1 ? 'secret is' : 'secrets are'} missing on the server`, detail: `${missing.join(', ')} — calls that need them will fail. This is advice, not a blocker.` } :
@@ -67,10 +70,9 @@ export function DeployDialog({ open, onClose, agent, initialEnv, initialVersion 
   report.unsupported.length ?
   { ok: false, title: 'Uses features that aren’t available yet', detail: report.unsupported.map((u) => `${u.feature} (${u.where})`).join('; ') } :
   { ok: true, title: 'Everything in this version can run' },
-  v.config.post_call?.recording && !v.config.persona?.recording_notice ?
+  vConfig.post_call?.recording && !vConfig.persona?.recording_notice ?
   { ok: false, title: 'Calls are recorded but callers aren’t told', detail: 'Turn on the recording notice unless you are sure it isn’t required.' } :
-  { ok: true, title: v.config.persona?.recording_notice ? 'Callers are told they may be recorded' : 'Calls aren’t recorded' },
-  { ok: true, title: 'No knowledge index to build', detail: 'This version has no document sources.' }] :
+  { ok: true, title: vConfig.persona?.recording_notice ? 'Callers are told they may be recorded' : 'Calls aren’t recorded' }] :
 
   [];
 

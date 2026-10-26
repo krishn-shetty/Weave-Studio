@@ -103,10 +103,12 @@ export function Agents() {
   const rows = useMemo(
     () =>
       agents.map((a) => {
-        const report = validateConfig(a.draft.config);
+        const report = a.loadError
+          ? { valid: false, errors: [{ path: null, message: `Could not load the draft: ${a.loadError}` }], warnings: [], secrets_required: [], unsupported: [] }
+          : validateConfig(a.draft.config);
         const latest = latestVersion(a);
         const current = currentDeployments(a);
-        const missing = latest ? missingSecrets(validateConfig(latest.config).secrets_required) : [];
+        const missing = latest?.config ? missingSecrets(validateConfig(latest.config).secrets_required) : [];
         const isPinned = pinnedAgentIds.includes(a.id);
         return { agent: a, report, latest, current, missing, changes: draftChangeCount(a), isPinned };
       }),
@@ -345,7 +347,7 @@ export function Agents() {
                           {report.errors.length} {report.errors.length === 1 ? 'problem' : 'problems'}
                         </StatusChip>
                       )}
-                      {changes > 0 && <StatusChip>{changes} unpublished</StatusChip>}
+                      {!!changes && <StatusChip>{changes} unpublished</StatusChip>}
                       {missing.length > 0 && <StatusChip tone="warning" title={missing.join(', ')}>Missing secret</StatusChip>}
                     </div>
                   </td>
@@ -451,7 +453,7 @@ export function Agents() {
                 </div>
                 {/* 4. STATUS */}
                 <div className="flex items-center justify-end gap-2 shrink-0">
-                  {item.changes > 0 && (
+                  {!!item.changes && (
                     <Badge variant="neutral" className="h-6">
                       {item.changes} unpublished
                     </Badge>
@@ -527,7 +529,7 @@ export function Agents() {
                     }
                     status={
                       <>
-                        {changes > 0 && (
+                        {!!changes && (
                           <Badge variant="neutral" className="h-6">
                             {changes} unpublished
                           </Badge>

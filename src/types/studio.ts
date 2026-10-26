@@ -138,7 +138,8 @@ export interface Version {
   published_at: string;
   published_by: string;
   checksum: string;
-  config: AgentConfig;
+  /** Loaded for the newest version up front, for older ones when first needed (GET /versions only lists summaries). */
+  config?: AgentConfig;
 }
 
 export type DeploymentStatus = 'pending' | 'active' | 'failed';
@@ -159,6 +160,9 @@ export interface Agent {
   name: string;
   starter: string;
   draft: Draft;
+  /** Set when the draft could not be read from the server; the draft then holds no real config and must not be edited. */
+  loadError?: string;
+  /** Newest first. */
   versions: Version[];
   deployments: Deployment[];
 }

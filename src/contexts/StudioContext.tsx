@@ -64,11 +64,21 @@ interface StudioValue {
   deploy: (agentId: string, version: string, env: EnvironmentName, note: string) => Deployment;
   rollback: (agentId: string, env: EnvironmentName) => Deployment | null;
   restoreVersion: (agentId: string, version: string) => void;
+  /** A version's config from the server (cached on the agent once loaded). */
+  loadVersionConfig: (agentId: string, version: string) => Promise<AgentConfig>;
   refreshAgents: () => Promise<void>;
   refreshAgent: (id: string) => Promise<Agent | undefined>;
 }
 
 const StudioContext = createContext<StudioValue | null>(null);
+
+const emptyDraft = (summary: BotSummary): Draft => ({
+  bot_id: summary.id,
+  revision: summary.draft_revision ?? 0,
+  saved_at: summary.draft_saved_at ?? '',
+  saved_by: '',
+  config: normalizeConfig(null),
+});
 
 interface StudioProviderProps {
   children: React.ReactNode;
@@ -195,6 +205,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       ]);
 
       let draft: Draft;
+      let loadError: string | undefined;
       if (draftRes.status === 'fulfilled') {
         draft = {
           bot_id: summary.id,
@@ -204,30 +215,31 @@ export function StudioProvider({ children }: StudioProviderProps) {
           config: normalizeConfig(draftRes.value.config as AgentConfig),
         };
       } else {
-        draft = {
-          bot_id: summary.id,
-          revision: summary.draft_revision || 1,
-          saved_at: summary.draft_saved_at || new Date().toISOString(),
-          saved_by: 'Server',
-          config: buildConfig({
-            id: summary.id,
-            name: summary.name,
-            company: 'Organization',
-            starter: starters[0],
-          }),
-        };
+        // No invented config: the agent says it could not be loaded and is not editable until it is.
+        loadError = draftRes.reason instanceof Error ? draftRes.reason.message : 'The draft could not be loaded.';
+        draft = emptyDraft(summary);
       }
 
       const versions: Version[] =
         versionsRes.status === 'fulfilled' && Array.isArray(versionsRes.value)
-          ? versionsRes.value.map((v: any) => ({
-              version: v.version,
-              published_at: v.published_at,
-              published_by: v.published_by || 'Server',
-              checksum: v.checksum || '',
-              config: normalizeConfig(v.config || draft.config),
-            }))
+          ? versionsRes.value
+              .map((v) => ({
+                version: v.version,
+                published_at: v.published_at,
+                published_by: v.published_by || 'Server',
+                checksum: v.checksum || '',
+              }))
+              .sort((a, b) => b.published_at.localeCompare(a.published_at))
           : [];
+      // The newest version's config, for "changes since published". Older ones load when first needed.
+      if (versions[0]) {
+        try {
+          const newest = await api.getVersion(summary.id, versions[0].version);
+          versions[0] = { ...versions[0], config: normalizeConfig(newest.config as AgentConfig) };
+        } catch {
+          // Leave it unloaded: counts of unpublished changes then say they could not be counted.
+        }
+      }
 
       const deployments: Deployment[] =
         deploymentsRes.status === 'fulfilled' && Array.isArray(deploymentsRes.value?.history)
@@ -248,22 +260,17 @@ export function StudioProvider({ children }: StudioProviderProps) {
         name: summary.name,
         starter: 'custom',
         draft,
+        loadError,
         versions,
         deployments,
       };
-    } catch {
-      // Fallback
+    } catch (err: unknown) {
       return {
         id: summary.id,
         name: summary.name,
         starter: 'custom',
-        draft: {
-          bot_id: summary.id,
-          revision: summary.draft_revision || 1,
-          saved_at: summary.draft_saved_at || new Date().toISOString(),
-          saved_by: 'Server',
-          config: {} as any,
-        },
+        draft: emptyDraft(summary),
+        loadError: err instanceof Error ? err.message : 'The agent could not be loaded.',
         versions: [],
         deployments: [],
       };
@@ -565,6 +572,23 @@ export function StudioProvider({ children }: StudioProviderProps) {
     [deploy]
   );
 
+  const loadVersionConfig = useCallback(
+    async (agentId: string, version: string): Promise<AgentConfig> => {
+      const agent = agentsRef.current.find((a) => a.id === agentId);
+      if (version === 'draft' && agent) return agent.draft.config;
+      const cached = agent?.versions.find((v) => v.version === version)?.config;
+      if (cached) return cached;
+      const res = await api.getVersion(agentId, version);
+      const config = normalizeConfig(res.config as AgentConfig);
+      updateAgent(agentId, (a) => ({
+        ...a,
+        versions: a.versions.map((v) => (v.version === version ? { ...v, config } : v)),
+      }));
+      return config;
+    },
+    [updateAgent]
+  );
+
   const restoreVersion = useCallback(
     async (agentId: string, version: string) => {
       const agent = agentsRef.current.find((a) => a.id === agentId);
@@ -614,6 +638,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       deploy,
       rollback,
       restoreVersion,
+      loadVersionConfig,
       refreshAgents,
       refreshAgent,
     }),
@@ -643,6 +668,7 @@ export function StudioProvider({ children }: StudioProviderProps) {
       deploy,
       rollback,
       restoreVersion,
+      loadVersionConfig,
       refreshAgents,
       refreshAgent,
     ]

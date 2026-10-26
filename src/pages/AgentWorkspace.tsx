@@ -11,6 +11,8 @@ import { NextStepBar } from '../components/agent/NextStepBar';
 import { ConflictDialog } from '../components/agent/ConflictDialog';
 import { PublishDialog } from '../components/agent/PublishDialog';
 import { ErrorBoundary } from '../components/ui/ErrorBoundary';
+import { Button } from '../components/ui/Button';
+import { useStudio } from '../contexts/StudioContext';
 
 const stageIds: StageId[] = ['build', 'test', 'release', 'monitor'];
 
@@ -21,6 +23,8 @@ export function AgentWorkspace() {
   const stage: StageId = stageIds.includes(stageParam) ? stageParam : 'build';
   const navigate = useNavigate();
   const editor = useDraftEditor(agentId);
+  const { refreshAgent } = useStudio();
+  const [retrying, setRetrying] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
   const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
 
@@ -36,6 +40,29 @@ export function AgentWorkspace() {
   const openPublish = useCallback(async () => {
     if (await editor.flush()) setPublishOpen(true);
   }, [editor]);
+
+  if (editor.agent?.loadError) {
+    return (
+      <div className="mx-auto max-w-lg px-6 py-24 text-center" role="alert">
+        <h1 className="text-lg font-semibold text-ink">{editor.agent.name} could not be loaded</h1>
+        <p className="mt-1 text-sm text-muted">{editor.agent.loadError}</p>
+        <p className="mt-1 text-sm text-muted">Nothing is shown or editable until the draft can be read from the server.</p>
+        <div className="mt-4 flex justify-center gap-2">
+          <Button
+            variant="primary"
+            disabled={retrying}
+            onClick={async () => {
+              setRetrying(true);
+              await refreshAgent(agentId).finally(() => setRetrying(false));
+            }}
+          >
+            {retrying ? 'Trying…' : 'Try again'}
+          </Button>
+          <Link to="/agents" className="inline-flex items-center px-3 text-sm font-medium text-accent hover:underline">Back to agents</Link>
+        </div>
+      </div>);
+
+  }
 
   if (!editor.agent || !editor.config || !editor.validation) {
     return (

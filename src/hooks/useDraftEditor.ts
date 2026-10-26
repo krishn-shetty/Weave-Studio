@@ -36,7 +36,8 @@ export function useDraftEditor(agentId: string) {
   const baseRef = useRef(baseRevision);
   baseRef.current = baseRevision;
 
-  // Load when the agent changes.
+  // Load when the agent changes, or once a draft that failed to load has been read.
+  const loadError = agent?.loadError;
   useEffect(() => {
     const a = getAgent(agentId);
     if (!a) return;
@@ -48,7 +49,7 @@ export function useDraftEditor(agentId: string) {
     setSaveError(null);
     setRemoteDraft(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentId]);
+  }, [agentId, loadError]);
 
   // Pick up server-side draft changes (publish moves meta.version on, restore) when we have nothing pending.
   const serverRevision = agent?.draft.revision;

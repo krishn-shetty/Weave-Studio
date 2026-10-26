@@ -26,9 +26,11 @@ export const liveEnvironments = (agent: Agent): EnvironmentName[] => {
 
 export const latestVersion = (agent: Agent): Version | undefined => agent.versions[0];
 
-export function draftChangeCount(agent: Agent): number {
+/** Changes in the draft since the newest version; null when that version's config has not been loaded (or the draft). */
+export function draftChangeCount(agent: Agent): number | null {
   const latest = latestVersion(agent);
   if (!latest) return 0;
+  if (!latest.config || agent.loadError) return null;
   return meaningfulChanges(diffConfigs(latest.config, agent.draft.config)).length;
 }
 
@@ -43,6 +45,15 @@ export interface NextStep {
 }
 
 export function nextStep(agent: Agent): NextStep {
+  if (agent.loadError) {
+    return {
+      title: `Could not load ${agent.name}`,
+      body: `The draft could not be read from the server: ${agent.loadError}`,
+      cta: 'Open agent',
+      stage: 'build',
+      tone: 'danger'
+    };
+  }
   const report = validateConfig(agent.draft.config);
   const latest = latestVersion(agent);
   const live = currentDeployments(agent);
@@ -65,7 +76,7 @@ export function nextStep(agent: Agent): NextStep {
     };
   }
   const changes = draftChangeCount(agent);
-  if (changes > 0) {
+  if (changes !== null && changes > 0) {
     return {
       title: `${changes} unpublished ${changes === 1 ? 'change' : 'changes'} in ${agent.name}`,
       body: `Your draft has moved on since ${latest.version}. Test the changes, then publish them as a new version.`,
