@@ -102,7 +102,7 @@ export function AgentWorkspace() {
       <ConflictDialog editor={editor} />
       <SaveFirstDialog editor={editor} />
       <LeaveGuard editor={editor} agentId={agentId} />
-      <PublishDialog open={publishOpen} onClose={() => setPublishOpen(false)} editor={editor} onGoToField={goToField} />
+      <PublishDialog open={publishOpen} onClose={() => setPublishOpen(false)} editor={editor} onGoToField={goToField} gate={readiness?.gate ?? null} />
     </div>);
 
 }

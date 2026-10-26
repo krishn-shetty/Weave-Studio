@@ -1,5 +1,5 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CircleAlertIcon, PhoneIcon } from 'lucide-react';
 import type { DraftEditor } from '../../hooks/useDraftEditor';
 import { isWebChannel, type Path } from '../../types/studio';
@@ -63,7 +63,9 @@ export function TestStage({ editor, onGoToField }: TestStageProps) {
     );
   }
 
-  const [activeTab, setActiveTab] = React.useState<'live' | 'readiness' | 'scenarios'>('live');
+  // A readiness step about the tests opens the scenarios (?focus=scenarios).
+  const [params] = useSearchParams();
+  const [activeTab, setActiveTab] = React.useState<'live' | 'readiness' | 'scenarios'>(params.get('focus') === 'scenarios' ? 'scenarios' : 'live');
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-6 lg:px-10">

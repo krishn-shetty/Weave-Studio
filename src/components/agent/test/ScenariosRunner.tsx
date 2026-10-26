@@ -8,6 +8,7 @@ import { Accordion, AccordionContent, AccordionHeader, AccordionItem } from '../
 import { cn } from '../../../utils/styles';
 import { api } from '../../../api/client';
 import { loadFacts } from '../../../utils/agentFacts';
+import { TestsGateSwitch } from './TestsGateSwitch';
 import type { Scenario, TestRun } from '../../../api/types';
 import { expectationLabel, readableId, runCounts, runNotes } from '../../../utils/testRuns';
 import { formatDateTime } from '../../../utils/format';
@@ -120,6 +121,8 @@ export function ScenariosRunner({ agentId, ensureSaved }: ScenariosRunnerProps) 
           </Button>
         </div>
       </div>
+
+      <TestsGateSwitch agentId={agentId} />
 
       {latestRun && (
         <section aria-labelledby="latest-run" className="rounded-xl border border-line bg-surface p-4">

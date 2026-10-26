@@ -13,6 +13,8 @@ import { draftChangeCount, latestVersion } from '../../utils/agentStatus';
 import { missingSecrets } from '../../utils/providerOptions';
 import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
+import type { GateAnswer } from '../../models/readiness';
+import { targetPath } from '../../models/agentPages';
 import { ChangeList } from './ChangeList';
 import { useChangesSincePublished } from '../../hooks/usePublishedChanges';
 
@@ -21,6 +23,8 @@ interface PublishDialogProps {
   onClose: () => void;
   editor: DraftEditor;
   onGoToField: (path: Path) => void;
+  /** "Tests must pass before publishing": its answer, or null when the gate is off. */
+  gate: GateAnswer | null;
 }
 
 const bumps: {value: VersionBump;label: string;text: string;}[] = [
@@ -29,7 +33,7 @@ const bumps: {value: VersionBump;label: string;text: string;}[] = [
 { value: 'major', label: 'Major', text: 'A big rework that changes how callers are handled.' }];
 
 
-export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDialogProps) {
+export function PublishDialog({ open, onClose, editor, onGoToField, gate }: PublishDialogProps) {
   const { publish } = useStudio();
   const navigate = useNavigate();
   const agent = editor.agent;
@@ -62,6 +66,7 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
   // What this version will change, in the same words as the header's list; shown first.
   const sincePublished = useChangesSincePublished(editor);
   if (!agent || !editor.config) return null;
+  const held = !!gate && !gate.ok;
 
   const handlePublish = async () => {
     if (publishing) return;
@@ -128,11 +133,29 @@ export function PublishDialog({ open, onClose, editor, onGoToField }: PublishDia
       footer={
       <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" onClick={handlePublish} disabled={publishing}>
-              {publishing ? <><LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />Publishing…</> : <>Publish {bumpVersion(latest?.version, bump)}</>}
+            <Button variant={held ? 'secondary' : 'primary'} onClick={handlePublish} disabled={publishing} title={held ? 'Publish although the tests gate is holding it' : undefined}>
+              {publishing ? <><LoaderCircleIcon className="h-4 w-4 animate-spin" aria-hidden />Publishing…</> : held ? <>Publish anyway ({bumpVersion(latest?.version, bump)})</> : <>Publish {bumpVersion(latest?.version, bump)}</>}
             </Button>
           </>
       }>
+      {held && gate &&
+      <div role="status" className="mb-6 rounded-lg border border-warning/40 bg-warning-soft p-3">
+          <p className="text-sm font-medium text-ink">Held: tests must pass before publishing</p>
+          <p className="mt-0.5 text-[13px] text-ink-soft">{gate.why}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+            size="sm"
+            variant="primary"
+            onClick={() => {
+              onClose();
+              navigate(targetPath(agent.id, gate.action === 'scenarios' ? { stage: 'build', focus: 'tests' } : { stage: 'test', focus: 'scenarios' }));
+            }}>
+              {gate.action === 'scenarios' ? 'Add tests' : 'Run the tests'}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs text-muted">You can still publish: “Publish anyway” is below. The switch is on the Test page (kept in this browser).</p>
+        </div>
+      }
       {report && !report.valid &&
       <div className="mb-6 rounded-lg border border-danger/30 bg-danger-soft/40 p-3">
           <p className="text-sm font-medium text-ink">The server’s checks found {report.errors.length} {report.errors.length === 1 ? 'problem' : 'problems'}</p>

@@ -13,7 +13,10 @@ function notAnObject(value: unknown): string | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? null : 'The configuration must be a JSON object ({ … }).';
 }
 
-export function JsonView({ editor }: {editor: DraftEditor;}) {
+/** focusKey: a top-level section to open the view at (for example "tests", from "Add tests"). */
+export function JsonView({ editor, focusKey }: {editor: DraftEditor;focusKey?: string;}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
   const { config, replaceConfig, canEdit, setParseError } = editor;
   const serialized = config ? JSON.stringify(config, null, 2) : '';
   const [text, setText] = useState(serialized);
@@ -56,7 +59,18 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
   }, [problem, setParseError]);
   useEffect(() => () => setParseError(null), [setParseError]);
 
-  const lines =text.split('\n').length;
+  // Open at a section: put the cursor on its key and scroll to it.
+  const focusAt = focusKey ? text.indexOf(`\n  "${focusKey}":`) : -1;
+  useEffect(() => {
+    if (!focusKey || focusAt < 0) return;
+    const line = text.slice(0, focusAt + 1).split('\n').length;
+    areaRef.current?.focus({ preventScroll: true });
+    areaRef.current?.setSelectionRange(focusAt + 3, focusAt + 3 + focusKey.length + 2);
+    scrollRef.current?.scrollTo({ top: Math.max(0, (line - 3) * LINE_HEIGHT), behavior: 'smooth' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey, focusAt >= 0]);
+
+  const lines = text.split('\n').length;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key !== 'Tab') return;
@@ -85,7 +99,7 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
 
           <span className="flex items-center gap-1.5 text-muted">
               <CircleCheckIcon className="h-4 w-4 text-success" aria-hidden />
-              Valid JSON. Edits apply to the draft as you type.
+              Valid JSON. Edits go into the draft as you type; Save keeps them.
             </span>
           }
         </div>
@@ -112,7 +126,13 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
           Your draft keeps the last valid version until this is fixed. Nothing is lost.
         </p>
       }
-      <div className={cn('mt-3 max-h-[70vh] overflow-auto rounded-lg border bg-surface', problem ? 'border-danger/50' : 'border-line')}>
+      {focusKey && focusAt < 0 &&
+      <p className="mt-2 rounded-md bg-info-soft px-3 py-2 text-[13px] text-ink-soft">
+          This agent has no “{focusKey}” section yet. Add it at the top level of the configuration, then press Save.
+          {focusKey === 'tests' && ' Each scenario is a conversation (what the caller says) and what must be true afterwards; GET /schema describes every field.'}
+        </p>
+      }
+      <div ref={scrollRef} className={cn('mt-3 max-h-[70vh] overflow-auto rounded-lg border bg-surface', problem ? 'border-danger/50' : 'border-line')}>
         <div className="flex min-w-max font-mono text-[13px]" style={{ lineHeight: `${LINE_HEIGHT}px` }}>
           <pre aria-hidden className="sticky left-0 select-none border-r border-line bg-canvas px-3 py-3 text-right text-muted">
             {Array.from({ length: lines }, (_, i) =>
@@ -122,6 +142,7 @@ export function JsonView({ editor }: {editor: DraftEditor;}) {
             )}
           </pre>
           <textarea
+            ref={areaRef}
             aria-label="Agent configuration JSON"
             value={text}
             readOnly={!canEdit}

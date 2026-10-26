@@ -127,7 +127,12 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
   useEffect(() => {
     if (!focus) return;
     if (focus === 'json' || focus === 'tests') {
-      if (view !== 'json') setView('json');
+      // Keep ?focus= so the JSON view can open at the tests section.
+      if (view !== 'json') {
+        const next = new URLSearchParams(params);
+        next.set('view', 'json');
+        setParams(next, { replace: true });
+      }
       return;
     }
     const t = window.setTimeout(() => {
@@ -232,7 +237,7 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
               setView('all');
             }} />
           }
-          {view === 'json' && <JsonView editor={editor} />}
+          {view === 'json' && <JsonView editor={editor} focusKey={focus === 'tests' ? 'tests' : undefined} />}
           {view !== 'section' &&
           <Button size="sm" variant="ghost" className="mt-4" onClick={() => navigate(targetPath(agentId, { stage: 'build', section }))}>
               Back to {current?.label}
