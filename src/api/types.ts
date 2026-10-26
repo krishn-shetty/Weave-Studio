@@ -62,6 +62,19 @@ export interface Published extends VersionSummary {
   secrets_required: string[];
 }
 
+/** POST /preview/prompt: what the model would be given, built by the server from a config. */
+export interface PromptPreview {
+  agent: { id: string; name: string; kind?: string; is_entry?: boolean };
+  channel: { id: string; type: string; modality?: string } | null;
+  instructions: string;
+  sections: Array<{ kind: string; label: string; text: string; active: boolean; when?: string }>;
+  opening?: string | null;
+  greeting?: string | null;
+  tools: Array<{ id?: string; name: string; type?: string; description?: string; offered: boolean; reason?: string | null }>;
+  stats: { words: number; characters?: number; approx_tokens: number; tools_offered: number };
+  warnings: Array<string | ValidationIssue>;
+}
+
 export interface DiffChange {
   op: 'add' | 'remove' | 'change';
   path: Array<string | number>;

@@ -1,26 +1,13 @@
-import React, { useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from '../../ui/Toast';
-import {
-  ClockIcon,
-  CopyIcon,
-  EyeIcon,
-  InfoIcon,
-  LayersIcon,
-  MessageSquareIcon,
-  PhoneIcon,
-  RadioIcon,
-  SlidersHorizontalIcon,
-  SparklesIcon,
-  WrenchIcon,
-  XIcon
-} from 'lucide-react';
-import { AgentConfig, ChannelType } from '../../../types/studio';
-import { getInstructionsText } from '../../../utils/validate';
+import { CopyIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react';
+import type { AgentConfig } from '../../../types/studio';
+import type { PromptPreview } from '../../../api/types';
+import { api } from '../../../api/client';
 import { Dialog } from '../../ui/Dialog';
 import { Button } from '../../ui/Button';
 import { StatusChip } from '../../ui/StatusChip';
-import { Segmented } from '../../ui/Segmented';
-import { cn } from '../../../utils/styles';
+import { cn, inputClass } from '../../../utils/styles';
 
 interface PromptPreviewModalProps {
   open: boolean;
@@ -28,95 +15,55 @@ interface PromptPreviewModalProps {
   config: AgentConfig;
 }
 
+/**
+ * The exact instructions an agent would get, built by the server (POST /preview/prompt) from what is in the editor now,
+ * unsaved edits included. Channel, agent and time are what-ifs.
+ */
 export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModalProps) {
-  const [channel, setChannel] = useState<ChannelType>('web_chat');
-  const [selectedAgentId, setSelectedAgentId] = useState<string>(config.agents?.entry ?? '');
-  const [verifiedCaller, setVerifiedCaller] = useState(false);
-  const [isAfterHours, setIsAfterHours] = useState(false);
+  const channels = config.channels.filter((c) => c.enabled);
+  const agents = config.agents?.items ?? [];
+  const [channelId, setChannelId] = useState('');
+  const [agentId, setAgentId] = useState('');
+  const [now, setNow] = useState('');
+  const [preview, setPreview] = useState<PromptPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
-  const activeAgent = useMemo(() => {
-    const items = config.agents?.items ?? [];
-    return (
-      items.find((a) => a.id === selectedAgentId) ??
-      items[0]
-    );
-  }, [config.agents?.items, selectedAgentId]);
-
-  const activeTools = useMemo(() => {
-    const ids = activeAgent?.tools ?? [];
-    return config.tools.filter((t) => ids.includes(t.id));
-  }, [activeAgent, config.tools]);
-
-  const compiledPrompt = useMemo(() => {
-    const lines: string[] = [];
-
-    // System Identity & Persona
-    lines.push(`You are ${config.persona.name}, an AI assistant representing ${config.persona.company}.`);
-    lines.push(`Tone: You must speak with a ${config.persona.tone} tone.`);
-
-    if (config.persona.recording_notice) {
-      lines.push('\n[RECORDING NOTICE DIRECTIVE]');
-      lines.push('You must state at the beginning of the interaction: "This interaction may be monitored or recorded for training and quality assurance purposes."');
-    }
-
-    // Channel specific guidelines
-    lines.push(`\n[CHANNEL CONTEXT: ${channel.toUpperCase()}]`);
-    if (channel === 'web_voice') {
-      lines.push('- You are speaking via Realtime Web Voice. Speak in concise, natural, spoken English.');
-      lines.push('- Keep individual replies under 3 sentences to avoid monologue fatigue.');
-      lines.push('- Do NOT use markdown asterisks or bullet formatting in spoken audio.');
-    } else if (channel === 'phone') {
-      lines.push('- You are connected via Telephony SIP phone line. Speak clearly at moderate pacing.');
-      lines.push('- Avoid symbols, brackets, or code snippets.');
-    } else {
-      lines.push('- You are in Web Chat. Use clean, readable paragraphs with concise bullet lists when helpful.');
-    }
-
-    // Simulated State
-    lines.push('\n[CONVERSATION STATE & SCHEDULE]');
-    if (verifiedCaller) {
-      lines.push('- Caller status: VERIFIED (Account #NW-849201, Postcode SW1A 1AA confirmed). You may disclose private balance and usage details.');
-    } else {
-      lines.push('- Caller status: UNVERIFIED. Do not disclose account-specific details or balances until identity is verified.');
-    }
-
-    if (isAfterHours) {
-      lines.push('- Time of call: 03:15 AM (OUTSIDE OF REGULAR BUSINESS HOURS). Inform caller that specialist teams open at 08:00 AM. Offer to take a message or send an SMS link.');
-    } else {
-      lines.push('- Time of call: 14:30 PM (BUSINESS HOURS ACTIVE). Escalation teams and live human agents are available.');
-    }
-
-    // Role Instructions
-    lines.push(`\n[ROLE INSTRUCTIONS: ${activeAgent?.name ?? 'Main'}]`);
-    lines.push(getInstructionsText(activeAgent?.instructions) || 'Assist the user courteously and accurately.');
-
-    // Persona Rules
-    if (config.persona.rules) {
-      lines.push('\n[GUARDRAILS & SAFETY RULES]');
-      lines.push(config.persona.rules);
-    }
-
-    // Handoff rules
-    if (activeAgent?.handoffs && activeAgent.handoffs.length > 0) {
-      lines.push('\n[AVAILABLE HANDOFFS]');
-      const handoffLabels = activeAgent.handoffs.map((h: any) => typeof h === 'string' ? h : (h.to || h.id || 'target'));
-      lines.push(`You may transfer the customer to the following specialized agents: ${handoffLabels.join(', ')}.`);
-    }
-
-    return lines.join('\n');
-  }, [config, channel, verifiedCaller, isAfterHours, activeAgent]);
-
-  const wordCount = useMemo(() => {
-    return compiledPrompt.trim().split(/\s+/).length;
-  }, [compiledPrompt]);
-
-  const estimatedTokens = useMemo(() => {
-    return Math.round(wordCount * 1.35);
-  }, [wordCount]);
+  useEffect(() => {
+    if (!open) return;
+    const controller = new AbortController();
+    const body: Record<string, unknown> = { config };
+    if (channelId) body.channel = channelId;
+    if (agentId) body.agent = agentId;
+    if (now) body.now = now;
+    setLoading(true);
+    setError(null);
+    // Debounced: the config changes on every keystroke while the dialog is open.
+    const timer = window.setTimeout(() => {
+      api
+        .previewPrompt(body, { signal: controller.signal })
+        .then(setPreview)
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(err instanceof Error ? err.message : 'The server could not build the preview.');
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [open, config, channelId, agentId, now, attempt]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(compiledPrompt);
-    toast.success('Compiled prompt copied to clipboard');
+    if (!preview) return;
+    navigator.clipboard.writeText(preview.instructions).then(
+      () => toast.success('Instructions copied'),
+      () => toast.error('Could not copy to the clipboard')
+    );
   };
 
   return (
@@ -124,143 +71,143 @@ export function PromptPreviewModal({ open, onClose, config }: PromptPreviewModal
       open={open}
       onClose={onClose}
       size="xl"
-      title="Prompt Preview (FR-12)"
-      description="Inspect the exact system text and tool schemas sent to the model for any channel, time, and conversation state."
+      title="Prompt preview"
+      description="The exact instructions the agent would get, built by the server from what is in the editor now (unsaved edits included)."
       footer={
-        <div className="flex w-full items-center justify-between">
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span className="h-2 w-2 rounded-full bg-success" />
-            <span>Simulated preview · 0 tokens billed · 0 API cost</span>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={handleCopy}>
-              <CopyIcon className="h-4 w-4" />
-              Copy prompt
-            </Button>
-            <Button variant="primary" onClick={onClose}>
-              Done
-            </Button>
-          </div>
-        </div>
+        <>
+          <Button variant="secondary" onClick={handleCopy} disabled={!preview}>
+            <CopyIcon className="h-4 w-4" aria-hidden />
+            Copy instructions
+          </Button>
+          <Button variant="primary" onClick={onClose}>
+            Done
+          </Button>
+        </>
       }
     >
       <div className="space-y-5">
-        {/* State and Context Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface p-4 shadow-panel">
-          <div className="flex flex-wrap items-center gap-3">
-            <div>
-              <span className="block text-xs font-medium text-muted">Channel</span>
-              <Segmented
-                size="sm"
-                label="Channel"
-                options={[
-                  { value: 'web_chat', label: 'Web Chat' },
-                  { value: 'web_voice', label: 'Web Voice' },
-                  { value: 'phone', label: 'Phone' }
-                ]}
-                value={channel}
-                onChange={(v) => setChannel(v as ChannelType)}
-              />
-            </div>
+        <div className="flex flex-wrap items-end gap-3 rounded-xl border border-line bg-surface p-4">
+          <label className="block">
+            <span className="block text-xs font-medium text-muted">Channel</span>
+            <select className={cn(inputClass, 'mt-1 w-44')} value={channelId} onChange={(e) => setChannelId(e.target.value)}>
+              <option value="">Default</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id} title={c.id}>
+                  {c.type === 'web_chat' ? 'Web chat' : c.type === 'web_voice' ? 'Web voice' : 'Phone'} ({c.id})
+                </option>
+              ))}
+            </select>
+          </label>
+          {agents.length > 1 && (
+            <label className="block">
+              <span className="block text-xs font-medium text-muted">Agent</span>
+              <select className={cn(inputClass, 'mt-1 w-48')} value={agentId} onChange={(e) => setAgentId(e.target.value)}>
+                <option value="">The one callers meet first</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id} title={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className="block">
+            <span className="block text-xs font-medium text-muted">What if it were</span>
+            <input type="datetime-local" className={cn(inputClass, 'mt-1 w-56')} value={now} onChange={(e) => setNow(e.target.value)} />
+          </label>
+          {preview && (
+            <p className="ml-auto text-xs text-muted" aria-live="polite">
+              {preview.stats.words} words · about {preview.stats.approx_tokens} tokens · {preview.stats.tools_offered}{' '}
+              {preview.stats.tools_offered === 1 ? 'tool' : 'tools'} offered
+            </p>
+          )}
+        </div>
 
-            {(config.agents?.items ?? []).length > 1 && (
-              <div>
-                <span className="block text-xs font-medium text-muted">Agent Role</span>
-                <select
-                  value={selectedAgentId}
-                  onChange={(e) => setSelectedAgentId(e.target.value)}
-                  className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs text-ink"
-                >
-                  {(config.agents?.items ?? []).map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.id})
-                    </option>
-                  ))}
-                </select>
+        {error ? (
+          <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-danger/30 bg-danger-soft p-3 text-sm">
+            <p className="text-danger">The server could not build the preview: {error}</p>
+            <Button size="sm" variant="secondary" onClick={() => setAttempt((n) => n + 1)}>
+              <RefreshCwIcon className="h-3.5 w-3.5" aria-hidden />
+              Try again
+            </Button>
+          </div>
+        ) : !preview ? (
+          <div className="space-y-3" aria-busy="true" aria-label="Loading the preview">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="rounded-lg border border-line p-3">
+                <div className="h-3 w-32 animate-pulse rounded bg-subtle" />
+                <div className="mt-2 h-3 w-full animate-pulse rounded bg-subtle" />
+                <div className="mt-1.5 h-3 w-4/5 animate-pulse rounded bg-subtle" />
               </div>
+            ))}
+          </div>
+        ) : (
+          <div className={cn('space-y-5 transition-opacity', loading && 'opacity-60')} aria-busy={loading}>
+            {preview.warnings.length > 0 && (
+              <ul className="space-y-1.5 rounded-lg border border-warning/30 bg-warning-soft p-3">
+                {preview.warnings.map((w, i) => (
+                  <li key={i} className="flex items-start gap-2 text-[13px] text-ink-soft">
+                    <TriangleAlertIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden />
+                    {typeof w === 'string' ? w : w.message}
+                  </li>
+                ))}
+              </ul>
             )}
-          </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 text-xs text-ink cursor-pointer">
-              <input
-                type="checkbox"
-                checked={verifiedCaller}
-                onChange={(e) => setVerifiedCaller(e.target.checked)}
-                className="rounded border-line text-accent focus:ring-accent"
-              />
-              Verified caller
-            </label>
+            {(preview.greeting || preview.opening) && (
+              <section aria-labelledby="pp-first">
+                <h3 id="pp-first" className="text-sm font-medium text-ink">
+                  First words
+                </h3>
+                {preview.greeting && <p className="mt-1 text-sm text-ink-soft">Says: “{preview.greeting}”</p>}
+                {preview.opening && <p className="mt-1 text-sm text-ink-soft">Told to: {preview.opening}</p>}
+              </section>
+            )}
 
-            <label className="flex items-center gap-2 text-xs text-ink cursor-pointer">
-              <input
-                type="checkbox"
-                checked={isAfterHours}
-                onChange={(e) => setIsAfterHours(e.target.checked)}
-                className="rounded border-line text-accent focus:ring-accent"
-              />
-              After hours (3:15 AM)
-            </label>
-          </div>
-        </div>
-
-        {/* Stats Row */}
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-muted">
-          <div className="flex items-center gap-4">
-            <span>
-              Words: <strong className="text-ink">{wordCount.toLocaleString()}</strong>
-            </span>
-            <span>
-              Est. Tokens: <strong className="text-ink">~{estimatedTokens.toLocaleString()}</strong>
-            </span>
-            <span>
-              Tools attached: <strong className="text-ink">{activeTools.length}</strong>
-            </span>
-          </div>
-          <StatusChip tone="neutral">Model: {config.defaults.models.llm.model}</StatusChip>
-        </div>
-
-        {/* Compiled Prompt Display */}
-        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-          <div>
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
-              System Instruction Text
-            </h3>
-            <div className="max-h-[380px] overflow-y-auto rounded-lg border border-line bg-canvas p-4 font-mono text-xs leading-relaxed text-ink select-text whitespace-pre-wrap">
-              {compiledPrompt}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-muted">
-              Attached Model Tool Schemas ({activeTools.length})
-            </h3>
-            <div className="max-h-[380px] space-y-2.5 overflow-y-auto rounded-lg border border-line bg-surface p-3">
-              {activeTools.length === 0 ? (
-                <p className="text-xs text-muted">No tools attached to this agent role.</p>
-              ) : (
-                activeTools.map((tool) => (
-                  <div key={tool.id} className="rounded-md border border-line bg-canvas p-2.5 text-xs font-mono">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-accent">{tool.id}()</span>
-                      <span className="rounded bg-subtle px-1.5 py-0.5 text-[10px] uppercase text-muted">
-                        {tool.type}
+            <section aria-labelledby="pp-sections">
+              <h3 id="pp-sections" className="text-sm font-medium text-ink">
+                Instructions for {preview.agent.name}
+                {preview.channel && <span className="font-normal text-muted"> on {preview.channel.id}</span>}
+              </h3>
+              <ol className="mt-2 space-y-2">
+                {preview.sections.map((s, i) => (
+                  <li key={`${s.kind}-${i}`} className={cn('rounded-lg border p-3', s.active ? 'border-line bg-surface' : 'border-dashed border-line bg-subtle/40')}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-ink" title={s.kind}>
+                        {s.label}
                       </span>
+                      {!s.active && <StatusChip>Not in the prompt right now</StatusChip>}
+                      {s.when && <span className="text-xs text-muted">when {s.when}</span>}
                     </div>
-                    <p className="mt-1 font-sans text-xs text-ink-soft">
-                      {tool.description}
-                    </p>
-                    {tool.connection && (
-                      <p className="mt-1 text-[11px] text-muted font-sans">
-                        Requires: <code className="font-mono text-ink">{tool.connection}</code>
-                      </p>
-                    )}
-                  </div>
-                ))
+                    <p className={cn('mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed', s.active ? 'text-ink-soft' : 'text-muted')}>{s.text}</p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            <section aria-labelledby="pp-tools">
+              <h3 id="pp-tools" className="text-sm font-medium text-ink">
+                Tools the model sees
+              </h3>
+              {preview.tools.length === 0 ? (
+                <p className="mt-1 text-sm text-muted">None.</p>
+              ) : (
+                <ul className="mt-2 divide-y divide-line rounded-lg border border-line">
+                  {preview.tools.map((t) => (
+                    <li key={t.id ?? t.name} className="px-3 py-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-mono text-xs font-medium text-ink">{t.name}</span>
+                        {t.offered ? <StatusChip tone="success">Offered</StatusChip> : <StatusChip tone="warning">Not offered</StatusChip>}
+                      </div>
+                      {t.description && <p className="mt-1 text-[13px] text-ink-soft">{t.description}</p>}
+                      {!t.offered && t.reason && <p className="mt-1 text-xs text-warning">{t.reason}</p>}
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
+            </section>
           </div>
-        </div>
+        )}
       </div>
     </Dialog>
   );

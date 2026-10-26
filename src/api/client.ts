@@ -15,6 +15,7 @@ import type {
   KnowledgeFile,
   KnowledgeSearchResult,
   KnowledgeStatus,
+  PromptPreview,
   ProvidersAnswer,
   Published,
   RequestOptions,
@@ -269,7 +270,7 @@ export const api = {
     }),
 
   // 19. Preview prompt
-  previewPrompt: (body: Record<string, unknown>, opts?: RequestOptions): Promise<unknown> => {
+  previewPrompt: (body: Record<string, unknown>, opts?: RequestOptions): Promise<PromptPreview> => {
     const config = body.config;
     const requestBody = config && isRecord(config) ? { ...body, config: toServerConfig(config as AgentConfig) } : body;
     return request('POST', '/preview/prompt', { ...opts, body: requestBody });
