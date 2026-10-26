@@ -1,5 +1,6 @@
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
 import react from '@vitejs/plugin-react'
+import { forwardedUser } from './src/utils/forwardedUser'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -10,18 +11,21 @@ export default defineConfig(({ command, mode }) => {
     throw new Error('AGENT_BUILDER_URL is not set. Copy .env.example to .env and set it to the Agent Builder API address.')
   }
   const apiKey = env.AGENT_BUILDER_API_KEY || ''
-  const trustedUser = env.AGENT_BUILDER_USER || ''
+  const fallbackUser = env.AGENT_BUILDER_USER || ''
 
-  const proxy = {
+  const proxy: Record<string, ProxyOptions> = {
     '/api': {
       target: target ?? '',
       changeOrigin: true,
       rewrite: (path: string) => path.replace(/^\/api/, ''),
       headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-      configure: (proxy: any) => {
-        proxy.on('proxyReq', (proxyReq: any) => {
+      configure: (proxyServer) => {
+        proxyServer.on('proxyReq', (proxyReq, req) => {
+          // The signed-in user (temporary sign-in) is who saves, publishes and deploys; AGENT_BUILDER_USER is the
+          // fallback for requests without one. The API key is only ever added here, never by the browser.
+          const user = forwardedUser(req.headers['x-user'], fallbackUser)
           proxyReq.removeHeader('x-user')
-          if (trustedUser) proxyReq.setHeader('X-User', trustedUser)
+          if (user) proxyReq.setHeader('X-User', user)
           if (!apiKey) proxyReq.removeHeader('authorization')
         })
       },
