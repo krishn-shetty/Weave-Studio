@@ -115,8 +115,8 @@ export function CommandPalette({ open, onClose, onOpenCreate }: CommandPalettePr
       {
         id: 'nav-analytics',
         category: 'Navigation',
-        title: 'Analytics & Reports',
-        subtitle: 'Conversational metrics, resolution rates, latency, and Q4 reports',
+        title: 'Analytics',
+        subtitle: 'Workspace analytics (not available yet)',
         icon: BarChart3Icon,
         perform: () => {
           navigate('/analytics');
