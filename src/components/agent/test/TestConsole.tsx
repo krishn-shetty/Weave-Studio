@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { MicIcon, RotateCcwIcon, SendHorizontalIcon, SquareIcon } from 'lucide-react';
+import { CircleAlertIcon, MicIcon, RotateCcwIcon, SendHorizontalIcon, SquareIcon } from 'lucide-react';
 import { isWebChannel, type AgentConfig, type ChannelType } from '../../../types/studio';
 import type { TestSession } from '../../../hooks/useTestSession';
 import { Button } from '../../ui/Button';
@@ -22,30 +22,146 @@ interface TestConsoleProps {
 const suggestions = ['When is my bill due?', 'Can I speak to a person?', 'Please call me back', 'Thanks, goodbye'];
 
 export function TestConsole({ session, config, revision, onBeforeStart, hasUnsaved }: TestConsoleProps) {
-  const webChannels = (config.channels ?? []).filter((c) => c.enabled && isWebChannel(c.type)).map((c) => c.type);
-  const [selected, setSelected] = useState<ChannelType>(webChannels[0] ?? 'web_chat');
+  // One tab per web channel type the draft has enabled; the server is asked for that channel by its id.
+  const webChannels = (config.channels ?? []).filter((c) => c.enabled && isWebChannel(c.type));
+  const channelTypes = [...new Set(webChannels.map((c) => c.type))];
+  const [selected, setSelected] = useState<ChannelType>(channelTypes[0] ?? 'web_chat');
   const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
-  const { status, messages, typing, channel, bubbleState, audioLevel, latestCaption, error, isMuted } = session;
+  const { status, messages, typing, channel, bubbleState, audioLevel, latestCaption, error, endReason, isMuted } = session;
+  const live = status === 'live';
+  const active = live || status === 'connecting' || status === 'waiting';
+  const settingUp = saving || status === 'connecting' || status === 'waiting';
+  // The conversation is shown on its own tab; the other tab shows its start screen.
+  const showing = status !== 'idle' && channel === selected;
+  const isVoice = selected === 'web_voice';
 
+  // A reply streams into its message, so follow its text as well as new messages.
+  const lastText = messages[messages.length - 1]?.text;
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages.length, typing]);
+  }, [messages.length, lastText, typing]);
 
   // The session runs the saved draft, so start only once the server has the latest edits.
   const start = async () => {
-    if (!(await onBeforeStart())) return;
-    session.start(selected);
+    if (settingUp) return;
+    // Unlock audio inside this click, before saving and connecting take it out of the click.
+    session.primeAudio();
+    setSaving(true);
+    let saved = false;
+    try {
+      saved = await onBeforeStart();
+    } finally {
+      setSaving(false);
+    }
+    if (saved) await session.start(selected, webChannels.find((c) => c.type === selected)?.id);
+  };
+
+  const switchTab = (next: ChannelType) => {
+    if (next === selected) return;
+    if (active) session.stop();
+    setSelected(next);
   };
 
   const submit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!draft.trim()) return;
+    if (!draft.trim() || !live) return;
     session.send(draft);
     setDraft('');
   };
 
-  const isVoice = channel === 'web_voice' || (status === 'idle' && selected === 'web_voice');
+  const conversation = (
+    <div
+      ref={listRef}
+      className={cn('space-y-3 overflow-y-auto px-4 py-5', isVoice ? 'max-h-[360px] min-h-[160px]' : 'flex-1')}
+      aria-live="polite"
+      aria-label={isVoice ? 'Live transcript' : 'Conversation'}
+    >
+      {!isVoice && status === 'connecting' && <p className="text-center text-[13px] text-muted">Connecting to the LiveKit room…</p>}
+      {!isVoice && status === 'waiting' && <p className="text-center text-[13px] text-muted">Waiting for the agent to join…</p>}
+      {isVoice && messages.length === 0 && (
+        <p className="text-center text-[13px] text-muted">What you and the agent say prints here as you talk.</p>
+      )}
+      {messages.map((m) =>
+        m.from === 'system' ? (
+          <p key={m.id} className="py-2 text-center text-[13px] text-muted">
+            {m.text}
+          </p>
+        ) : (
+          <motion.div
+            key={m.id}
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: easeOut }}
+            className={cn('flex flex-col', m.from === 'user' ? 'items-end' : 'items-start')}
+          >
+            <div
+              className={cn(
+                'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
+                m.from === 'user' ? 'bg-accent text-accent-contrast rounded-br-sm' : 'bg-subtle text-ink border border-line rounded-bl-sm',
+                m.partial && 'opacity-80'
+              )}
+            >
+              <p>
+                {m.text}
+                {m.partial && <span aria-hidden> …</span>}
+              </p>
+              {m.via && <span className="mt-1 block text-[11px] opacity-75">{m.via === 'voice' ? 'spoken' : 'typed'}</span>}
+            </div>
+
+            {m.form && (
+              <div className="mt-3 w-full max-w-md">
+                <ChatForm form={m.form} accepted={m.formStatus === 'accepted'} onSubmit={(vals) => session.submitForm(m.id, m.form!, vals)} />
+              </div>
+            )}
+          </motion.div>
+        )
+      )}
+      {typing && (
+        <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted">
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:0.15s]" />
+          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:0.3s]" />
+          <span>Agent is generating response…</span>
+        </div>
+      )}
+    </div>
+  );
+
+  const composer = active && (
+    <div className="border-t border-line p-3">
+      {!isVoice && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              disabled={!live}
+              onClick={() => session.send(s)}
+              className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-ink-soft hover:border-accent hover:text-ink transition-colors disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:text-ink-soft"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+      <form onSubmit={submit} className="flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          disabled={!live}
+          aria-label="Message"
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={!live ? 'Waiting for the agent to join…' : isVoice ? 'Or type a message during the call…' : 'Type a message…'}
+          className={cn(inputClass, 'flex-1 disabled:cursor-not-allowed disabled:opacity-60')}
+        />
+        <Button variant="primary" type="submit" disabled={!live || !draft.trim()} aria-label="Send">
+          <SendHorizontalIcon className="h-4 w-4" />
+        </Button>
+      </form>
+    </div>
+  );
 
   return (
     <section aria-labelledby="console-title" className="flex min-h-[560px] flex-col rounded-xl border border-line bg-surface">
@@ -53,149 +169,87 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
         <div className="flex flex-wrap items-center gap-2">
           <h2 id="console-title" className="text-sm font-semibold text-ink">Talk to your draft</h2>
           <StatusChip className="font-mono">draft · rev {revision}</StatusChip>
-          <StatusChip tone={status === 'live' ? 'success' : 'neutral'}>
-            {status === 'live' ? 'Live · Real API' : 'Real LiveKit'}
-          </StatusChip>
+          <StatusChip tone={live ? 'success' : 'neutral'}>{live ? 'Live · Real API' : 'Real LiveKit'}</StatusChip>
         </div>
-        <div className="flex items-center gap-2">
-          {status === 'idle' ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {channelTypes.length > 0 && (
             <Segmented
               size="sm"
               label="Channel"
-              options={webChannels.map((c) => ({ value: c, label: c === 'web_chat' ? 'Web chat' : 'Web voice' }))}
+              options={channelTypes.map((c) => ({ value: c, label: c === 'web_chat' ? 'Web chat' : 'Web voice' }))}
               value={selected}
-              onChange={setSelected}
+              onChange={switchTab}
             />
-          ) : (
-            <>
-              {(status === 'live' || status === 'connecting' || status === 'waiting') && (
-                <Button size="sm" variant="ghost" onClick={session.stop}>
-                  <SquareIcon className="h-3.5 w-3.5" aria-hidden />
-                  End
-                </Button>
-              )}
-              <Button size="sm" variant="secondary" onClick={start}>
-                <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden />
-                New conversation
-              </Button>
-            </>
+          )}
+          {showing && active && (
+            <Button size="sm" variant="ghost" onClick={session.stop}>
+              <SquareIcon className="h-3.5 w-3.5" aria-hidden />
+              End
+            </Button>
+          )}
+          {showing && (
+            <Button size="sm" variant="secondary" onClick={start} disabled={settingUp}>
+              <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden />
+              New conversation
+            </Button>
           )}
         </div>
       </div>
 
-      {status === 'idle' ? (
+      {!showing ? (
         <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
           <p className="text-base font-medium text-ink">The agent speaks first.</p>
           <p className="mt-1 max-w-sm text-sm text-muted">
-            You’ll connect to the live runtime worker over LiveKit. Listen to TTS audio or chat via real streaming messages.
+            {isVoice
+              ? 'Talk to the live runtime worker over LiveKit. What you both say prints as a chat while you talk, and you can type too.'
+              : 'Chat with the live runtime worker over LiveKit. Replies stream in as the agent writes them.'}
           </p>
           {hasUnsaved && (
-            <p className="mt-3 text-[13px] text-ink-soft">
-              You have unsaved changes. Tests use the saved draft, so you’ll be asked to save first.
-            </p>
+            <p className="mt-3 text-[13px] text-ink-soft">You have unsaved changes. Tests use the saved draft, so you’ll be asked to save first.</p>
           )}
-          <Button variant="primary" className="mt-5" onClick={start}>
-            {selected === 'web_voice' ? <MicIcon className="h-4 w-4" aria-hidden /> : null}
-            Start {selected === 'web_voice' ? 'voice' : 'chat'} test
+          <Button variant="primary" className="mt-5" onClick={start} disabled={settingUp}>
+            {isVoice ? <MicIcon className="h-4 w-4" aria-hidden /> : null}
+            Start {isVoice ? 'voice' : 'chat'} test
           </Button>
         </div>
       ) : isVoice ? (
-        <div className="flex-1 p-4">
-          <VoiceBubble
-            state={bubbleState}
-            audioLevel={audioLevel}
-            captionText={latestCaption}
-            errorMessage={error ?? undefined}
-            isMuted={isMuted}
-            onToggleMute={session.toggleMute}
-            onEndCall={session.stop}
-            onSwitchToChat={() => {
-              session.stop();
-              setSelected('web_chat');
-            }}
-            onStartVoice={start}
-          />
-        </div>
+        <>
+          <div className="p-4 pb-0">
+            <VoiceBubble
+              compact
+              state={bubbleState}
+              audioLevel={audioLevel}
+              captionText={latestCaption}
+              errorMessage={error ?? endReason ?? undefined}
+              audioBlocked={session.audioBlocked}
+              onEnableAudio={session.enableAudio}
+              micError={session.micError}
+              onRetryMic={session.retryMic}
+              isMuted={isMuted}
+              onToggleMute={session.toggleMute}
+              onEndCall={session.stop}
+              onStartVoice={start}
+            />
+          </div>
+          {conversation}
+          {composer}
+        </>
       ) : (
         <>
-          <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-5" aria-live="polite" aria-label="Conversation">
-            {status === 'connecting' && <p className="text-center text-[13px] text-muted">Connecting to LiveKit room…</p>}
-            {status === 'waiting' && <p className="text-center text-[13px] text-muted">Waiting for agent to join…</p>}
-            {messages.map((m) =>
-              m.from === 'system' ? (
-                <p key={m.id} className="py-2 text-center text-[13px] text-muted">
-                  {m.text}
-                </p>
-              ) : (
-                <motion.div
-                  key={m.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2, ease: easeOut }}
-                  className={cn('flex flex-col', m.from === 'user' ? 'items-end' : 'items-start')}
-                >
-                  <div
-                    className={cn(
-                      'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
-                      m.from === 'user'
-                        ? 'bg-accent text-accent-contrast rounded-br-sm'
-                        : 'bg-subtle text-ink border border-line rounded-bl-sm'
-                    )}
-                  >
-                    <p>{m.text}</p>
-                    {m.via === 'voice' && <span className="mt-1 block text-[11px] opacity-75">via voice</span>}
-                  </div>
-
-                  {m.form && (
-                    <div className="mt-3 w-full max-w-md">
-                      <ChatForm
-                        form={m.form}
-                        accepted={m.formStatus === 'accepted'}
-                        onSubmit={(vals) => session.submitForm(m.id, m.form!, vals)}
-                      />
-                    </div>
-                  )}
-                </motion.div>
-              )
-            )}
-            {typing && (
-              <div className="flex items-center gap-1.5 px-2 py-1 text-xs text-muted">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:0.15s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:0.3s]" />
-                <span>Agent is generating response…</span>
-              </div>
-            )}
-          </div>
-
-          {status === 'live' && (
-            <div className="border-t border-line p-3">
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {suggestions.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => session.send(s)}
-                    className="rounded-full border border-line bg-surface px-2.5 py-1 text-xs text-ink-soft hover:border-accent hover:text-ink transition-colors"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <form onSubmit={submit} className="flex gap-2">
-                <input
-                  type="text"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Type a message…"
-                  className={cn(inputClass, 'flex-1')}
-                />
-                <Button variant="primary" type="submit" disabled={!draft.trim()}>
-                  <SendHorizontalIcon className="h-4 w-4" />
-                </Button>
-              </form>
+          {status === 'error' && error && (
+            <div role="alert" className="mx-4 mt-4 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-danger/30 bg-danger-soft p-3 text-sm">
+              <p className="flex min-w-0 flex-1 items-start gap-2 text-ink">
+                <CircleAlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
+                {error}
+              </p>
+              <Button size="sm" variant="secondary" onClick={start} disabled={settingUp}>
+                <RotateCcwIcon className="h-3.5 w-3.5" aria-hidden />
+                Try again
+              </Button>
             </div>
           )}
+          {conversation}
+          {composer}
         </>
       )}
     </section>

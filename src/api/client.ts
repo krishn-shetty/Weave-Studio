@@ -433,7 +433,13 @@ export function followCall(
     if (onEnd) onEnd();
   });
 
-  source.addEventListener('error', () => {
+  source.addEventListener('error', (event: Event) => {
+    // The server's own `error` event (no call appeared within `wait`) carries data; stop instead of reconnecting.
+    if (event instanceof MessageEvent && event.data !== undefined) {
+      source.close();
+      if (onError) onError();
+      return;
+    }
     if (source.readyState === EventSource.CLOSED && onError) onError();
   });
 

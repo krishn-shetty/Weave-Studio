@@ -756,6 +756,36 @@ const addLine = (next: AgentConfig, line: { id: string; text: string }) => {
   if (!list<Json>(next.messages).some((m) => m?.id === line.id)) next.messages = [...list<Json>(next.messages), { ...line }];
 };
 
+/**
+ * Declares a connection from a typed web address and points a tool at it: an HTTP tool's `connection` (base_url), or an
+ * MCP tool's `server` (url). Lets a dropped HTTP or MCP block be finished on the canvas. `problem` is set, and the config
+ * unchanged, when the address cannot be used.
+ */
+export function addConnectionFor(config: AgentConfig, toolIndex: number, address: string): { config: AgentConfig; problem: string } {
+  const tool = list<Json>(config.tools)[toolIndex];
+  if (!isObj(tool) || (tool.type !== 'http' && tool.type !== 'mcp')) return { config, problem: 'Only HTTP and MCP tools use a connection.' };
+  const typed = address.trim();
+  let url: URL;
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(typed) ? typed : `https://${typed}`);
+  } catch {
+    return { config, problem: 'Type the address it answers on, for example https://api.example.com.' };
+  }
+  if (!/^https?:$/.test(url.protocol) || !url.hostname.includes('.') && url.hostname !== 'localhost') {
+    return { config, problem: 'Type the address it answers on, for example https://api.example.com.' };
+  }
+  const next = clone(config);
+  const connections = (isObj(next.connections) ? next.connections : {}) as Json;
+  const isHttp = tool.type === 'http';
+  const host = url.hostname.replace(/^www\./, '').split('.')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  const id = freshId(Object.keys(connections), /^[a-z]/.test(host) ? host : isHttp ? 'api' : 'mcp_server');
+  const where = `${url.origin}${url.pathname === '/' ? '' : url.pathname.replace(/\/$/, '')}`;
+  connections[id] = isHttp ? { type: 'http', base_url: where } : { type: 'mcp', url: where };
+  next.connections = connections;
+  (list<Json>(next.tools)[toolIndex] as Json)[isHttp ? 'connection' : 'server'] = id;
+  return { config: next, problem: '' };
+}
+
 /** Adds what a library item stands for. New tools are used by nobody until an agent is connected to them. */
 export function addPreset(config: AgentConfig, preset: PresetId, { providers = null, botId = '' }: { providers?: ProvidersAnswer | null; botId?: string } = {}): EditResult {
   if (preset === 'web_chat' || preset === 'web_voice' || preset === 'sip_voice') {

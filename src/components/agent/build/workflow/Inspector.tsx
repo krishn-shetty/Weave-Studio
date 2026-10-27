@@ -6,6 +6,7 @@ import type { BuildSection } from '../../../../models/agentPages';
 import {
   AGENT_KIND_LABEL,
   CHANNEL_LABEL,
+  addConnectionFor,
   connect,
   isInjected,
   pathOfNode,
@@ -545,6 +546,55 @@ map(([id, c]) => {
   return { value: id, label: where ? `${id} · ${where}` : id };
 });
 
+/** Declares a connection from its web address and points this tool at it, so a dropped HTTP or MCP block can be finished here. */
+function NewConnection({ ctx, toolIndex, kind, first }: { ctx: Ctx; toolIndex: number; kind: 'http' | 'mcp'; first: boolean }) {
+  const [open, setOpen] = useState(first);
+  const [address, setAddress] = useState('');
+  const [problem, setProblem] = useState('');
+  useEffect(() => setOpen(first), [first, toolIndex]);
+  if (ctx.disabled) return null;
+  if (!open) {
+    return (
+      <button type="button" className="text-xs font-medium text-accent hover:underline" onClick={() => setOpen(true)}>
+        + New connection
+      </button>
+    );
+  }
+  const add = () => {
+    const r = addConnectionFor(ctx.config, toolIndex, address);
+    if (r.problem) return setProblem(r.problem);
+    ctx.editor.replaceConfig(r.config);
+    setAddress('');
+    setProblem('');
+    setOpen(false);
+  };
+  return (
+    <div className="rounded-md border border-line bg-canvas p-2.5">
+      <label className="text-xs font-medium text-ink" htmlFor={`new-connection-${toolIndex}`}>
+        {first ? `This agent has no ${kind === 'http' ? 'HTTP' : 'MCP'} connection yet. ` : ''}Address of the {kind === 'http' ? 'API' : 'MCP server'}
+      </label>
+      <div className="mt-1.5 flex gap-1.5">
+        <input
+          id={`new-connection-${toolIndex}`}
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), add())}
+          placeholder={kind === 'http' ? 'https://api.example.com' : 'https://mcp.example.com/mcp'}
+          className={cn(problem ? inputErrorClass : inputClass, 'min-w-0 flex-1 font-mono text-xs')}
+        />
+        <Button size="sm" variant="secondary" onClick={add} disabled={!address.trim()}>
+          Add
+        </Button>
+      </div>
+      {problem ? (
+        <p role="alert" className="mt-1 text-xs text-danger">{problem}</p>
+      ) : (
+        <p className="mt-1 text-xs text-muted">Sign-in details are secrets the server holds; set them in the JSON view under connections.</p>
+      )}
+    </div>
+  );
+}
+
 function ToolSettings({ ctx, node, onSelect }: { ctx: Ctx; node: FlowNode; onSelect: (id: string) => void }) {
   const { config } = ctx;
   const base: Path = ['tools', node.index];
@@ -580,7 +630,7 @@ function ToolSettings({ ctx, node, onSelect }: { ctx: Ctx; node: FlowNode; onSel
       <Section title="Request">
           <SelectField ctx={ctx} path={[...base, 'connection']} label="Connection" required options={connectionOptions(config, 'http')} hint="Where the API is and how to sign in. Credentials are secrets the server holds; they never appear here." />
           {isObj(connection) && isObj(connection.auth) && <p className="text-xs text-muted">Signs in with a secret the server holds.</p>}
-          {connectionOptions(config, 'http').length === 0 && <p className="text-xs text-warning">This bot has no HTTP connection yet. Add one under Advanced JSON of the whole agent (JSON view, connections).</p>}
+          <NewConnection ctx={ctx} toolIndex={node.index} kind="http" first={connectionOptions(config, 'http').length === 0} />
           <SelectField ctx={ctx} path={[...base, 'request', 'method']} label="Method" required options={['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => ({ value: m, label: m }))} />
           <TextField ctx={ctx} path={[...base, 'request', 'path']} label="Path" required mono placeholder="/orders/{{args.order_number}}" hint="Added to the connection’s address. {{args.NAME}} puts in what the model supplies." />
           <NumberField ctx={ctx} path={[...base, 'timeout_s']} label="Timeout (seconds)" min={0} step={0.5} />
@@ -593,7 +643,7 @@ function ToolSettings({ ctx, node, onSelect }: { ctx: Ctx; node: FlowNode; onSel
       {tool.type === 'mcp' &&
       <Section title="MCP server">
           <SelectField ctx={ctx} path={[...base, 'server']} label="Server connection" required options={connectionOptions(config, 'mcp')} />
-          {connectionOptions(config, 'mcp').length === 0 && <p className="text-xs text-warning">This bot has no MCP connection yet. Add one in the JSON view, under connections.</p>}
+          <NewConnection ctx={ctx} toolIndex={node.index} kind="mcp" first={connectionOptions(config, 'mcp').length === 0} />
           <LinesField ctx={ctx} path={[...base, 'allow']} label="Tools it may use" required hint="One per line. Nothing else on the server is exposed." />
         </Section>
       }
@@ -607,6 +657,9 @@ function ToolSettings({ ctx, node, onSelect }: { ctx: Ctx; node: FlowNode; onSel
           required
           options={list<Json>(config.knowledge).filter((b) => isObj(b) && !isInjected(b)).map((b) => ({ value: String(b.id), label: String(b.id) }))}
           hint="Only bases set to be searched by a tool are listed." />
+          {!list<Json>(config.knowledge).some((b) => isObj(b) && !isInjected(b)) &&
+          <p className="text-xs text-warning">This agent has no knowledge base to search yet. Add documents under Build → Knowledge, then pick it here.</p>
+          }
           <NumberField ctx={ctx} path={[...base, 'top_k']} label="Passages per search" min={1} max={20} step={1} />
           <TextField ctx={ctx} path={[...base, 'on_error', 'tool_error']} label="Told to the model when the search fails" multiline rows={2} emptyRemoves />
         </Section>

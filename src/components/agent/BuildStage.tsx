@@ -266,7 +266,7 @@ export function BuildStage({ editor, section, readiness, focusRequest }: BuildSt
         </div>
 
         <aside id="checks-panel" className="self-start lg:col-span-2 xl:sticky xl:top-44 xl:col-span-1">
-          <ValidationPanel view={editor.validationView} config={editor.config} onGoTo={focusPath} />
+          <ValidationPanel view={editor.validationView} config={editor.config} onGoTo={focusPath} onRepair={editor.canEdit ? editor.replaceConfig : undefined} />
         </aside>
       </div>
 

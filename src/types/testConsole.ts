@@ -19,6 +19,8 @@ export interface ChatMessage {
   from: 'agent' | 'user' | 'system';
   text: string;
   via?: 'voice' | 'text';
+  /** Still being spoken or streamed; the text will change. */
+  partial?: boolean;
   form?: FormRequest;
   formStatus?: 'open' | 'accepted';
 }

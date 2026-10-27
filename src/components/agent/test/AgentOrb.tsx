@@ -13,6 +13,8 @@ interface AgentOrbProps {
   /** What the orb shows, for screen readers. */
   label: string;
   className?: string;
+  /** Smaller orb (150px), for when a transcript shares the panel. */
+  small?: boolean;
 }
 
 // Kept at module level: LiveOrb pushes new options to its engine whenever the array changes identity.
@@ -46,8 +48,9 @@ function useOrbSize() {
  * shows the fluid orb driven by `level`. States crossfade; once a fade ends only the current orb stays mounted,
  * since browsers allow only a handful of WebGL contexts.
  */
-export function AgentOrb({ state, level = 0, label, className }: AgentOrbProps) {
-  const size = useOrbSize();
+export function AgentOrb({ state, level = 0, label, className, small = false }: AgentOrbProps) {
+  const fullSize = useOrbSize();
+  const size = small ? 150 : fullSize;
   const reduceMotion = useReducedMotion();
 
   return (

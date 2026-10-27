@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
+import type { Participant, RemoteParticipant, RemoteTrack, Room, TextStreamReader } from 'livekit-client';
 import type { AgentConfig, ChannelType } from '../types/studio';
 import type { ChatMessage, FormRequest, TraceEvent } from '../types/testConsole';
 import { api, followCall } from '../api/client';
 import type { Session } from '../api/types';
 import { reportLiveKitStatus } from './useLiveKitStatus';
 import type { BubbleState } from '../components/agent/test/VoiceBubble';
+import {
+  AGENT_DID_NOT_JOIN,
+  MIC_NEEDS_SECURE_CONTEXT,
+  disconnectReasonText,
+  isAgentParticipant,
+  micErrorMessage,
+  roomConnectError,
+  sessionStartError,
+  traceFromRecord,
+  type TraceItem,
+} from '../utils/testSession';
 
 export type SessionStatus = 'idle' | 'connecting' | 'waiting' | 'live' | 'ended' | 'error';
 
@@ -12,6 +24,11 @@ const TOPIC_TRANSCRIPTION = 'lk.transcription';
 const TOPIC_CHAT = 'lk.chat';
 const TOPIC_FORM = 'agent-builder.form';
 const TOPIC_FORM_SUBMIT = 'agent-builder.form.submit';
+
+// The token asks LiveKit to send the agent; if no agent participant has joined by then, it is not coming.
+const AGENT_JOIN_TIMEOUT_MS = 20_000;
+// When the agent leaves, LiveKit usually closes the room right after, with a reason worth showing. Wait that long for it.
+const AGENT_LEFT_GRACE_MS = 1_500;
 
 // Audio meters: an analyser's RMS (speech sits around 0.05–0.3) is boosted into a 0–1 level, the same boost the
 // voice orb gives its own microphone. The agent's voice drives the level; the caller's moves it only a little.
@@ -38,18 +55,32 @@ export interface TestSession {
   audioLevel: number;
   latestCaption: string;
   isMuted: boolean;
+  /** Why the conversation could not start or broke off; set with status 'error'. */
   error: string | null;
-  start: (type: ChannelType) => Promise<void>;
+  /** Why the last conversation ended, in plain words; set with status 'ended'. */
+  endReason: string | null;
+  /** The browser blocked the agent's audio until the person clicks; `enableAudio` (from a click) lets it play. */
+  audioBlocked: boolean;
+  /** The microphone could not be turned on; `retryMic` (from a click) asks again. */
+  micError: string | null;
+  /** Unlocks audio playback; call it synchronously in the click that starts a conversation, before any await. */
+  primeAudio: () => void;
+  enableAudio: () => Promise<void>;
+  retryMic: () => Promise<void>;
+  /** `channelId` is the channel's id in the config (e.g. "web-voice"); the server picks channels by id, not type. */
+  start: (type: ChannelType, channelId?: string) => Promise<void>;
   stop: () => void;
   send: (text: string) => Promise<void>;
   toggleMute: () => Promise<void>;
   submitForm: (messageId: string, form: FormRequest, values: Record<string, string>) => Record<string, string>;
 }
 
+const errorText = (err: unknown) => (err instanceof Error ? err.message : String(err ?? ''));
+
 export function useTestSession(agentId: string, _config?: AgentConfig, _revision?: number): TestSession {
   void _config;
   void _revision;
-  const [status, setStatus] = useState<SessionStatus>('idle');
+  const [status, setStatusState] = useState<SessionStatus>('idle');
   const [bubbleState, setBubbleState] = useState<BubbleState>('idle');
   const [channel, setChannel] = useState<ChannelType>('web_chat');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -61,16 +92,35 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
   const [latestCaption, setLatestCaption] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [endReason, setEndReason] = useState<string | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
 
-  const roomRef = useRef<any>(null);
+  const roomRef = useRef<Room | null>(null);
   const audioHostRef = useRef<HTMLDivElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
   const streamUnsubRef = useRef<(() => void) | null>(null);
   const agentMeterRef = useRef<Meter | null>(null);
   const userMeterRef = useRef<Meter | null>(null);
   const meterTimerRef = useRef<number | null>(null);
+  const watchdogRef = useRef<number | null>(null);
+  const agentLeftRef = useRef<number | null>(null);
+  const agentIdentityRef = useRef<string | null>(null);
+  const statusRef = useRef<SessionStatus>('idle');
+  const mutedRef = useRef(false);
+  // Every start (and every end) bumps the run; handlers and awaits of an older run see they are stale and stop.
+  const runRef = useRef(0);
+  const idRef = useRef(0);
+  // Transcript segment id -> message id, so a segment that arrives in pieces (or is re-sent as it firms up) stays one bubble.
+  const segmentsRef = useRef(new Map<string, string>());
   const startRef = useRef(0);
   const activeAgentRef = useRef(agentId);
   activeAgentRef.current = agentId;
+
+  const setStatus = useCallback((next: SessionStatus) => {
+    statusRef.current = next;
+    setStatusState(next);
+  }, []);
 
   // Ensure an invisible audio host element exists in the DOM
   useEffect(() => {
@@ -86,24 +136,32 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
       if (audioHostRef.current) {
         audioHostRef.current.replaceChildren();
       }
+      audioContextRef.current?.close().catch(() => undefined);
+      audioContextRef.current = null;
     };
   }, []);
 
-  const addTrace = useCallback((events: Omit<TraceEvent, 'id' | 'at_ms'>[]) => {
+  const nextId = (prefix: string) => `${prefix}_${Date.now().toString(36)}_${(idRef.current += 1)}`;
+
+  const addTrace = useCallback((events: TraceItem[]) => {
     const at = Date.now() - startRef.current;
-    setTrace((prev) => [
-      ...prev,
-      ...events.map((e, i) => ({
-        ...e,
-        id: `t_${Date.now().toString(36)}_${i}`,
-        at_ms: at + i * 40,
-      })),
-    ]);
+    setTrace((prev) => [...prev, ...events.map((e) => ({ ...e, id: nextId('t'), at_ms: at }))]);
   }, []);
 
-  const addMessage = useCallback((m: Omit<ChatMessage, 'id'>) => {
-    setMessages((prev) => [...prev, { ...m, id: `m_${Date.now().toString(36)}_${prev.length}` }]);
+  const addMessage = useCallback((m: Omit<ChatMessage, 'id'>): string => {
+    const id = nextId('m');
+    setMessages((prev) => [...prev, { ...m, id }]);
+    return id;
   }, []);
+
+  const upsertSegment = useCallback(
+    (key: string, m: Omit<ChatMessage, 'id'>) => {
+      const id = segmentsRef.current.get(key);
+      if (id) setMessages((prev) => prev.map((x) => (x.id === id ? { ...x, text: m.text, partial: m.partial } : x)));
+      else segmentsRef.current.set(key, addMessage(m));
+    },
+    [addMessage]
+  );
 
   const setMeter = useCallback((ref: MutableRefObject<Meter | null>, next: Meter | null) => {
     ref.current?.cleanup().catch(() => undefined);
@@ -131,7 +189,15 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
     }, METER_INTERVAL_MS);
   }, []);
 
+  const clearTimers = useCallback(() => {
+    if (watchdogRef.current !== null) window.clearTimeout(watchdogRef.current);
+    if (agentLeftRef.current !== null) window.clearTimeout(agentLeftRef.current);
+    watchdogRef.current = null;
+    agentLeftRef.current = null;
+  }, []);
+
   const cleanup = useCallback(() => {
+    clearTimers();
     stopMeters();
     if (streamUnsubRef.current) {
       streamUnsubRef.current();
@@ -139,306 +205,433 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
     }
     const room = roomRef.current;
     roomRef.current = null;
+    agentIdentityRef.current = null;
     if (audioHostRef.current) {
       audioHostRef.current.replaceChildren();
     }
     if (room) {
       try {
         room.removeAllListeners();
-        room.disconnect();
+        room.disconnect().catch(() => undefined);
       } catch {
         // ignore
       }
     }
-  }, [stopMeters]);
+    setAudioBlocked(false);
+  }, [clearTimers, stopMeters]);
 
   useEffect(() => {
     return () => {
+      runRef.current += 1;
       cleanup();
     };
   }, [cleanup]);
 
-  const stop = useCallback(() => {
-    cleanup();
-    setStatus('ended');
-    setBubbleState('ended');
+  const resetFlags = useCallback(() => {
     setListening(false);
     setAgentSpeaking(false);
     setTyping(false);
-    addMessage({ from: 'system', text: 'Conversation ended.' });
-    addTrace([{ kind: 'end', label: 'Room disconnected', detail: 'User left the conversation', status: 'info' }]);
-  }, [cleanup, addMessage, addTrace]);
+  }, []);
 
-  const start = useCallback(
-    async (type: ChannelType) => {
+  /** The conversation is over: tear it down and say why. `failed` shows the reason as an error with Try again. */
+  const finish = useCallback(
+    (reason: string, failed: boolean, traceDetail?: string) => {
+      runRef.current += 1;
       cleanup();
-      startRef.current = Date.now();
-      setChannel(type);
-      setMessages([]);
-      setTrace([]);
-      setError(null);
-      setLatestCaption('');
-      setIsMuted(false);
-      setStatus('connecting');
-      setBubbleState('connecting');
+      resetFlags();
+      setStatus(failed ? 'error' : 'ended');
+      setBubbleState(failed ? 'error' : 'ended');
+      setError(failed ? reason : null);
+      setEndReason(failed ? null : reason);
+      if (!failed) addMessage({ from: 'system', text: reason });
+      addTrace([{ kind: failed ? 'error' : 'end', label: reason, detail: traceDetail, status: failed ? 'error' : 'info' }]);
+    },
+    [cleanup, resetFlags, setStatus, addMessage, addTrace]
+  );
 
+  const stop = useCallback(() => {
+    if (statusRef.current === 'idle' || statusRef.current === 'ended' || statusRef.current === 'error') return;
+    finish('You ended the conversation.', false, 'Left the room');
+  }, [finish]);
+
+  /** The bubble's resting state while live: listening, or muted. Leaves other phases alone. */
+  const restBubble = useCallback(() => {
+    setBubbleState((prev) => (statusRef.current === 'live' ? (mutedRef.current ? 'muted' : 'listening') : prev));
+  }, []);
+
+  const primeAudio = useCallback(() => {
+    // Browsers only let audio start from a click. A context resumed here, inside the click, stays unlocked for the
+    // room, which plays the agent through it.
+    try {
+      const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) return;
+      if (!audioContextRef.current || audioContextRef.current.state === 'closed') audioContextRef.current = new Ctor();
+      audioContextRef.current.resume().catch(() => undefined);
+    } catch {
+      // No Web Audio: LiveKit plays through audio elements, and the Enable audio button covers a blocked start.
+    }
+  }, []);
+
+  const enableAudio = useCallback(async () => {
+    audioContextRef.current?.resume().catch(() => undefined);
+    const room = roomRef.current;
+    if (!room) return;
+    try {
+      await room.startAudio();
+    } catch (err) {
+      addTrace([{ kind: 'session', label: 'Audio is still blocked', detail: errorText(err), status: 'error' }]);
+    }
+    setAudioBlocked(!room.canPlaybackAudio);
+  }, [addTrace]);
+
+  const enableMic = useCallback(
+    async (room: Room, isCurrent: () => boolean, meterFor: (track: unknown) => Meter | null) => {
+      if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+        setMicError(MIC_NEEDS_SECURE_CONTEXT);
+        addTrace([{ kind: 'session', label: 'Microphone unavailable', detail: 'Page is not a secure context (HTTPS or localhost)', status: 'error' }]);
+        return;
+      }
       try {
-        // 1. Ask real backend API for LiveKit join token
-        const session: Session = await api.startSession(activeAgentRef.current, {
-          ref: 'draft',
-          channel: type,
-        });
-
+        const mic = await room.localParticipant.setMicrophoneEnabled(true);
+        if (!isCurrent()) return;
+        setMicError(null);
+        mutedRef.current = false;
+        setIsMuted(false);
+        // Reads the published track; a muted mic simply reads as silence.
+        if (mic?.audioTrack) setMeter(userMeterRef, meterFor(mic.audioTrack));
+        restBubble();
+        addTrace([{ kind: 'session', label: 'Microphone on', detail: 'Audio track published to the room', status: 'ok' }]);
+      } catch (err) {
+        if (!isCurrent()) return;
+        setMicError(micErrorMessage(err));
         addTrace([
           {
             kind: 'session',
-            label: 'Session created',
-            detail: `Room: ${session.room} · token expires in ${session.expires_in_s}s`,
-            status: 'info',
-          },
-        ]);
-
-        // 2. Connect live trace SSE stream for real runtime events
-        try {
-          const unsub = followCall(activeAgentRef.current, session.room, {
-            onRecord: (record: any) => {
-              if (record.kind) {
-                addTrace([
-                  {
-                    kind: record.kind === 'tool' ? 'tool' : 'agent',
-                    label: record.name || record.kind,
-                    detail: record.detail || JSON.stringify(record),
-                    status: record.status || 'info',
-                  },
-                ]);
-              }
-            },
-          });
-          streamUnsubRef.current = unsub;
-        } catch {
-          // SSE fallback
-        }
-
-        // 3. Dynamically import livekit-client
-        const { Room, RoomEvent, Track, createAudioAnalyser } = await import('livekit-client');
-        // A meter that fails to start (no Web Audio) leaves the orb idle; the call itself is unaffected.
-        const meterFor = (track: any): Meter | null => {
-          try {
-            return { track, ...createAudioAnalyser(track, METER_OPTIONS) };
-          } catch {
-            return null;
-          }
-        };
-        const room = new Room({
-          audioCaptureDefaults: {
-            autoGainControl: true,
-            echoCancellation: true,
-            noiseSuppression: true,
-          },
-        });
-        roomRef.current = room;
-
-        // Register transcript stream handler for agent speech
-        room.registerTextStreamHandler(TOPIC_TRANSCRIPTION, async (reader: any, participant: any) => {
-          const isLocal = participant?.identity === room.localParticipant.identity;
-          let fullText = '';
-          try {
-            for await (const chunk of reader) {
-              fullText += chunk;
-              if (!isLocal) {
-                setLatestCaption(fullText);
-                setAgentSpeaking(true);
-                setBubbleState('speaking');
-              }
-            }
-          } catch {
-            // ignore
-          }
-
-          if (!isLocal && fullText.trim()) {
-            addMessage({ from: 'agent', text: fullText });
-            setAgentSpeaking(false);
-            setBubbleState('listening');
-          } else if (isLocal && fullText.trim()) {
-            addMessage({ from: 'user', text: fullText });
-          }
-        });
-
-        // Register form protocol handler
-        room.registerTextStreamHandler(TOPIC_FORM, async (reader: any) => {
-          let jsonText = '';
-          for await (const chunk of reader) jsonText += chunk;
-          try {
-            const formPacket = JSON.parse(jsonText);
-            if (formPacket.type === 'form') {
-              addMessage({
-                from: 'agent',
-                text: formPacket.title || 'Please fill in this form',
-                form: formPacket,
-                formStatus: 'open',
-              });
-            }
-          } catch {
-            // ignore
-          }
-        });
-
-        // Track subscriptions: attach audio track
-        room.on(RoomEvent.TrackSubscribed, (track: any) => {
-          if (track.kind === Track.Kind.Audio && audioHostRef.current) {
-            const element = track.attach();
-            audioHostRef.current.appendChild(element);
-            // Meter the agent from its own track. Chrome only feeds a remote track to Web Audio while it is
-            // attached to an element, which the line above does.
-            setMeter(agentMeterRef, meterFor(track));
-          }
-        });
-
-        room.on(RoomEvent.TrackUnsubscribed, (track: any) => {
-          track.detach().forEach((el: any) => el.remove());
-          if (agentMeterRef.current?.track === track) setMeter(agentMeterRef, null);
-        });
-
-        // Active speakers changed: who is talking (the level itself comes from the meters)
-        room.on(RoomEvent.ActiveSpeakersChanged, (speakers: any[]) => {
-          const agentSpeaker = speakers.find((s) => s.identity !== room.localParticipant.identity);
-          if (agentSpeaker) {
-            setAgentSpeaking(true);
-            setBubbleState('speaking');
-          } else {
-            setAgentSpeaking(false);
-            const localSpeaker = speakers.find((s) => s.identity === room.localParticipant.identity);
-            if (localSpeaker) {
-              setBubbleState('listening');
-            } else {
-              setBubbleState((prev) => (prev === 'speaking' ? 'listening' : prev));
-            }
-          }
-        });
-
-        room.on(RoomEvent.ParticipantConnected, (p: any) => {
-          addTrace([
-            {
-              kind: 'agent',
-              label: `${p.identity} joined`,
-              detail: 'Runtime worker connected to the room',
-              status: 'ok',
-            },
-          ]);
-          setStatus('live');
-          setBubbleState('listening');
-          setListening(true);
-        });
-
-        room.on(RoomEvent.ParticipantDisconnected, (p: any) => {
-          addTrace([
-            {
-              kind: 'agent',
-              label: `${p.identity} left`,
-              detail: 'Agent participant disconnected',
-              status: 'info',
-            },
-          ]);
-        });
-
-        room.on(RoomEvent.Disconnected, () => {
-          stop();
-        });
-
-        // 4. Connect to LiveKit room
-        await room.connect(session.livekit_url, session.token);
-        reportLiveKitStatus({ state: 'ok', at: Date.now(), connectMs: Date.now() - startRef.current });
-        setStatus('live');
-        startMeters();
-        await room.startAudio().catch((err: unknown) => {
-          // Audio autoplay may require user interaction
-          void err;
-        });
-
-        // 5. Enable microphone if voice channel
-        if (type === 'web_voice') {
-          try {
-            const mic = await room.localParticipant.setMicrophoneEnabled(true);
-            // Reads the published track; a muted mic simply reads as silence.
-            if (mic?.audioTrack) setMeter(userMeterRef, meterFor(mic.audioTrack));
-            setListening(true);
-            setBubbleState('listening');
-            addTrace([
-              {
-                kind: 'session',
-                label: 'Microphone enabled',
-                detail: 'Audio track published to room',
-                status: 'ok',
-              },
-            ]);
-          } catch (micErr: any) {
-            addTrace([
-              {
-                kind: 'session',
-                label: 'Microphone permission denied',
-                detail: micErr?.message || 'Access blocked',
-                status: 'info',
-              },
-            ]);
-          }
-        }
-      } catch (err: any) {
-        setStatus('error');
-        setBubbleState('error');
-        const msg = err?.message || 'Could not start live conversation.';
-        reportLiveKitStatus({ state: 'failed', at: Date.now(), message: msg });
-        setError(msg);
-        addTrace([
-          {
-            kind: 'session',
-            label: 'Connection failed',
-            detail: msg,
+            label: 'Microphone could not be turned on',
+            detail: `${(err as { name?: string })?.name ?? 'Error'}: ${errorText(err)}`,
             status: 'error',
           },
         ]);
       }
     },
-    [cleanup, addTrace, addMessage, stop, setMeter, startMeters]
+    [addTrace, setMeter, restBubble]
+  );
+
+  // Set by start(); lets retryMic reuse the current run's meter factory and staleness check.
+  const micRetryRef = useRef<(() => Promise<void>) | null>(null);
+
+  const retryMic = useCallback(async () => {
+    await micRetryRef.current?.();
+  }, []);
+
+  const start = useCallback(
+    async (type: ChannelType, channelId?: string) => {
+      // A conversation is already being set up; a second click must not start another one.
+      if (statusRef.current === 'connecting' || statusRef.current === 'waiting') return;
+      primeAudio();
+      cleanup();
+      const run = (runRef.current += 1);
+      const isCurrent = () => run === runRef.current;
+      startRef.current = Date.now();
+      micRetryRef.current = null;
+      mutedRef.current = false;
+      setChannel(type);
+      setMessages([]);
+      segmentsRef.current.clear();
+      setTrace([]);
+      setError(null);
+      setEndReason(null);
+      setMicError(null);
+      setLatestCaption('');
+      setIsMuted(false);
+      resetFlags();
+      setStatus('connecting');
+      setBubbleState('connecting');
+
+      const fail = (message: string, detail: string, label: string, liveKit = false) => {
+        if (!isCurrent()) return;
+        if (liveKit) reportLiveKitStatus({ state: 'failed', at: Date.now(), message });
+        // The step that failed, with the technical detail; finish() then adds the plain-words message.
+        addTrace([{ kind: 'session', label, detail, status: 'error' }]);
+        finish(message, true);
+      };
+
+      if (type === 'web_voice' && (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia)) {
+        fail(MIC_NEEDS_SECURE_CONTEXT, `isSecureContext=${window.isSecureContext}; mediaDevices=${Boolean(navigator.mediaDevices)}`, 'Voice needs a secure page');
+        return;
+      }
+
+      // 1. Ask the API for a LiveKit join token (the token also asks LiveKit to send the agent).
+      let session: Session;
+      try {
+        // No id: the server picks the bot's web channel itself.
+        session = await api.startSession(activeAgentRef.current, channelId ? { ref: 'draft', channel: channelId } : { ref: 'draft' });
+      } catch (err) {
+        const { message, detail } = sessionStartError(err);
+        fail(message, detail, 'Session could not be created', (err as { kind?: string })?.kind === 'unavailable');
+        return;
+      }
+      if (!isCurrent()) return;
+      addTrace([{ kind: 'session', label: 'Session created', detail: `Room ${session.room} · token valid ${session.expires_in_s}s`, status: 'ok' }]);
+
+      // 2. The call's records feed the live trace. The runtime writes them once it has joined, so follow from then
+      //    (the stream replays the call from its first record).
+      let streamClosed = false;
+      const followTrace = () => {
+        if (streamUnsubRef.current) return;
+        streamUnsubRef.current = followCall(activeAgentRef.current, session.room, {
+          onRecord: (record) => {
+            if (!isCurrent()) return;
+            const item = traceFromRecord(record);
+            if (item) addTrace([item]);
+          },
+          onEnd: () => {
+            if (isCurrent()) addTrace([{ kind: 'session', label: 'Live trace complete', status: 'info' }]);
+          },
+          onError: () => {
+            if (!isCurrent() || streamClosed) return;
+            streamClosed = true;
+            addTrace([{ kind: 'session', label: 'Live trace stream closed', detail: 'The conversation itself is not affected', status: 'info' }]);
+          },
+        });
+      };
+
+      // 3. Build the room.
+      let lk: typeof import('livekit-client');
+      try {
+        lk = await import('livekit-client');
+      } catch (err) {
+        fail('The voice and chat library could not load. Reload the page and try again.', errorText(err), 'livekit-client failed to load');
+        return;
+      }
+      if (!isCurrent()) return;
+      const { Room: LiveKitRoom, RoomEvent, Track, ParticipantKind, ConnectionState, createAudioAnalyser } = lk;
+
+      // A meter that fails to start (no Web Audio) leaves the orb idle; the call itself is unaffected.
+      const meterFor = (track: unknown): Meter | null => {
+        try {
+          return { track, ...createAudioAnalyser(track as Parameters<typeof createAudioAnalyser>[0], METER_OPTIONS) };
+        } catch {
+          return null;
+        }
+      };
+
+      const audioContext = audioContextRef.current;
+      const room = new LiveKitRoom({
+        audioCaptureDefaults: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
+        // Play through the context unlocked by the click, so the greeting is heard without a second click.
+        webAudioMix: audioContext ? { audioContext } : false,
+      });
+      roomRef.current = room;
+      const isAgent = (p: Participant) => isAgentParticipant(p, ParticipantKind.AGENT);
+
+      const agentJoined = (p: Participant) => {
+        if (!isCurrent() || agentIdentityRef.current) return;
+        agentIdentityRef.current = p.identity;
+        if (watchdogRef.current !== null) window.clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+        setStatus('live');
+        setBubbleState(type === 'web_voice' && mutedRef.current ? 'muted' : 'listening');
+        setListening(type === 'web_voice');
+        addTrace([{ kind: 'agent', label: `${p.identity} joined`, detail: 'The runtime worker joined the room', status: 'ok' }]);
+        followTrace();
+      };
+
+      // Agent replies (and, in voice, the caller's own words) arrive as text streams.
+      // Both sides print live, like a chat: the agent's words arrive in pieces as it speaks; the caller's words are
+      // re-sent as the transcription firms up (lk.transcription_final). One segment (lk.segment_id) = one bubble.
+      room.registerTextStreamHandler(TOPIC_TRANSCRIPTION, async (reader: TextStreamReader, participant: { identity: string }) => {
+        const isLocal = participant?.identity === room.localParticipant.identity;
+        const attributes = reader.info?.attributes ?? {};
+        const key = `${isLocal ? 'user' : 'agent'}:${attributes['lk.segment_id'] ?? reader.info?.id}`;
+        const from = isLocal ? 'user' : 'agent';
+        const via = type === 'web_voice' ? 'voice' : undefined;
+        let fullText = '';
+        try {
+          for await (const chunk of reader) {
+            if (!isCurrent()) return;
+            fullText += chunk;
+            if (!fullText.trim()) continue;
+            if (!isLocal) {
+              setTyping(false);
+              setLatestCaption(fullText);
+            }
+            upsertSegment(key, { from, text: fullText.trim(), via, partial: true });
+          }
+        } catch (err) {
+          if (isCurrent()) addTrace([{ kind: 'session', label: 'A transcript stream broke off', detail: errorText(err), status: 'error' }]);
+        }
+        if (!isCurrent() || !fullText.trim()) return;
+        upsertSegment(key, { from, text: fullText.trim(), via, partial: isLocal && attributes['lk.transcription_final'] === 'false' });
+      });
+
+      room.registerTextStreamHandler(TOPIC_FORM, async (reader: TextStreamReader) => {
+        let jsonText = '';
+        try {
+          for await (const chunk of reader) jsonText += chunk;
+          const formPacket = JSON.parse(jsonText);
+          if (isCurrent() && formPacket.type === 'form') {
+            addMessage({ from: 'agent', text: formPacket.title || 'Please fill in this form', form: formPacket, formStatus: 'open' });
+            addTrace([{ kind: 'form', label: `Form: ${formPacket.title || 'details'}`, status: 'info' }]);
+          }
+        } catch (err) {
+          if (isCurrent()) addTrace([{ kind: 'form', label: 'A form could not be read', detail: errorText(err), status: 'error' }]);
+        }
+      });
+
+      room.on(RoomEvent.TrackSubscribed, (track: RemoteTrack) => {
+        if (track.kind === Track.Kind.Audio && audioHostRef.current) {
+          const element = track.attach();
+          audioHostRef.current.appendChild(element);
+          // Meter the agent from its own track. Chrome only feeds a remote track to Web Audio while it is
+          // attached to an element, which the line above does.
+          setMeter(agentMeterRef, meterFor(track));
+        }
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        track.detach().forEach((el) => el.remove());
+        if (agentMeterRef.current?.track === track) setMeter(agentMeterRef, null);
+      });
+
+      room.on(RoomEvent.AudioPlaybackStatusChanged, () => {
+        if (!isCurrent()) return;
+        const blocked = !room.canPlaybackAudio;
+        setAudioBlocked(blocked);
+        if (blocked) addTrace([{ kind: 'session', label: 'Browser blocked audio', detail: 'Waiting for a click on Enable audio', status: 'info' }]);
+      });
+
+      // Who is talking (the level itself comes from the meters).
+      room.on(RoomEvent.ActiveSpeakersChanged, (speakers: Participant[]) => {
+        if (!isCurrent() || statusRef.current !== 'live') return;
+        const agentSpeaker = speakers.some((s) => s.identity !== room.localParticipant.identity);
+        setAgentSpeaking(agentSpeaker);
+        if (agentSpeaker) setBubbleState('speaking');
+        else restBubble();
+      });
+
+      room.on(RoomEvent.ParticipantConnected, (p: RemoteParticipant) => {
+        if (!isCurrent()) return;
+        if (isAgent(p)) agentJoined(p);
+        else addTrace([{ kind: 'session', label: `${p.identity} joined`, detail: 'Another participant (not an agent)', status: 'info' }]);
+      });
+
+      room.on(RoomEvent.ParticipantDisconnected, (p: RemoteParticipant) => {
+        if (!isCurrent()) return;
+        addTrace([{ kind: 'agent', label: `${p.identity} left`, status: 'info' }]);
+        if (p.identity !== agentIdentityRef.current) return;
+        agentLeftRef.current = window.setTimeout(() => {
+          if (isCurrent()) finish('The agent left the conversation.', false, `${p.identity} left the room`);
+        }, AGENT_LEFT_GRACE_MS);
+      });
+
+      room.on(RoomEvent.ConnectionStateChanged, (state: string) => {
+        if (!isCurrent()) return;
+        if (state === ConnectionState.Reconnecting || state === ConnectionState.SignalReconnecting) {
+          setBubbleState('reconnecting');
+          addTrace([{ kind: 'session', label: 'Connection dropped, reconnecting…', detail: state, status: 'info' }]);
+        } else if (state === ConnectionState.Connected && statusRef.current !== 'connecting') {
+          setBubbleState((prev) => (prev === 'reconnecting' ? (statusRef.current === 'live' ? (mutedRef.current ? 'muted' : 'listening') : 'waiting') : prev));
+        }
+      });
+
+      room.on(RoomEvent.Reconnected, () => {
+        if (isCurrent()) addTrace([{ kind: 'session', label: 'Reconnected', status: 'ok' }]);
+      });
+
+      room.on(RoomEvent.MediaDevicesError, (err: Error) => {
+        if (!isCurrent()) return;
+        setMicError(micErrorMessage(err));
+        addTrace([{ kind: 'session', label: 'Microphone or speaker problem', detail: `${err.name}: ${err.message}`, status: 'error' }]);
+      });
+
+      room.on(RoomEvent.Disconnected, (reason?: number) => {
+        if (!isCurrent()) return;
+        const { name, text, error: failed } = disconnectReasonText(reason);
+        finish(text, failed, `LiveKit: ${name}`);
+      });
+
+      // 4. Join the room.
+      try {
+        await room.connect(session.livekit_url, session.token);
+      } catch (err) {
+        if (!isCurrent()) return;
+        const { message, detail } = roomConnectError(err);
+        fail(message, detail, 'Could not join the LiveKit room', true);
+        return;
+      }
+      if (!isCurrent()) {
+        room.disconnect().catch(() => undefined);
+        return;
+      }
+      reportLiveKitStatus({ state: 'ok', at: Date.now(), connectMs: Date.now() - startRef.current });
+      addTrace([{ kind: 'session', label: 'Joined the room', detail: `as ${room.localParticipant.identity}`, status: 'ok' }]);
+      startMeters();
+
+      // The agent may already be in the room; otherwise wait for it, but not forever.
+      room.remoteParticipants.forEach((p) => {
+        if (isAgent(p)) agentJoined(p);
+      });
+      if (!agentIdentityRef.current) {
+        setStatus('waiting');
+        setBubbleState('waiting');
+        watchdogRef.current = window.setTimeout(() => {
+          if (!isCurrent() || agentIdentityRef.current) return;
+          fail(AGENT_DID_NOT_JOIN, `No agent participant joined ${session.room} within ${AGENT_JOIN_TIMEOUT_MS / 1000}s`, 'Agent did not join', true);
+        }, AGENT_JOIN_TIMEOUT_MS);
+      }
+
+      room.startAudio().catch(() => undefined).finally(() => {
+        if (isCurrent()) setAudioBlocked(!room.canPlaybackAudio);
+      });
+
+      // 5. Voice: turn the microphone on.
+      if (type === 'web_voice') {
+        micRetryRef.current = () => (isCurrent() && roomRef.current === room ? enableMic(room, isCurrent, meterFor) : Promise.resolve());
+        await enableMic(room, isCurrent, meterFor);
+      }
+    },
+    [cleanup, primeAudio, resetFlags, setStatus, finish, addTrace, addMessage, upsertSegment, setMeter, startMeters, restBubble, enableMic]
   );
 
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || !roomRef.current) return;
+      const room = roomRef.current;
+      if (!trimmed || !room || statusRef.current !== 'live') return;
 
-      addMessage({ from: 'user', text: trimmed, via: channel === 'web_voice' ? 'voice' : 'text' });
+      // Typed, even during a voice call (the agent takes text in either channel).
+      addMessage({ from: 'user', text: trimmed, via: channel === 'web_voice' ? 'text' : undefined });
       setTyping(true);
       setBubbleState('thinking');
 
       try {
-        await roomRef.current.localParticipant.sendText(trimmed, { topic: TOPIC_CHAT });
-      } catch (err: any) {
-        addTrace([
-          {
-            kind: 'session',
-            label: 'Failed to send message',
-            detail: err?.message,
-            status: 'error',
-          },
-        ]);
-      } finally {
+        await room.localParticipant.sendText(trimmed, { topic: TOPIC_CHAT });
+      } catch (err) {
         setTyping(false);
+        restBubble();
+        addMessage({ from: 'system', text: 'Your message was not sent. Check the connection and send it again.' });
+        addTrace([{ kind: 'session', label: 'Message not sent', detail: errorText(err), status: 'error' }]);
       }
     },
-    [channel, addMessage, addTrace]
+    [channel, addMessage, addTrace, restBubble]
   );
 
   const toggleMute = useCallback(async () => {
-    if (!roomRef.current) return;
-    const next = !isMuted;
+    const room = roomRef.current;
+    if (!room) return;
+    const next = !mutedRef.current;
     try {
-      await roomRef.current.localParticipant.setMicrophoneEnabled(!next);
+      await room.localParticipant.setMicrophoneEnabled(!next);
+      mutedRef.current = next;
       setIsMuted(next);
-      setBubbleState(next ? 'muted' : 'listening');
-    } catch {
-      // ignore
+      if (!next) setMicError(null);
+      restBubble();
+    } catch (err) {
+      setMicError(micErrorMessage(err));
+      addTrace([{ kind: 'session', label: next ? 'Could not mute' : 'Could not unmute', detail: errorText(err), status: 'error' }]);
     }
-  }, [isMuted]);
+  }, [addTrace, restBubble]);
 
   const submitForm = useCallback(
     (messageId: string, form: FormRequest, values: Record<string, string>): Record<string, string> => {
@@ -451,9 +644,10 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
       if (Object.keys(errors).length > 0) return errors;
 
       if (roomRef.current) {
-        const payload = JSON.stringify({ request_id: (form as any).request_id || (form as any).requestId || messageId, values });
+        const payload = JSON.stringify({ request_id: form.request_id || messageId, values });
         roomRef.current.localParticipant.sendText(payload, { topic: TOPIC_FORM_SUBMIT }).catch((err: unknown) => {
-          void err;
+          addMessage({ from: 'system', text: `The details for ${form.title} were not sent. Try again.` });
+          addTrace([{ kind: 'form', label: 'Form answers not sent', detail: errorText(err), status: 'error' }]);
         });
       }
 
@@ -463,7 +657,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
       addMessage({ from: 'system', text: `Sent details for ${form.title}.` });
       return {};
     },
-    [addMessage]
+    [addMessage, addTrace]
   );
 
   return {
@@ -479,6 +673,12 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
     latestCaption,
     isMuted,
     error,
+    endReason,
+    audioBlocked,
+    micError,
+    primeAudio,
+    enableAudio,
+    retryMic,
     start,
     stop,
     send,

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MicIcon, MicOffIcon, PhoneOffIcon, MessageSquareIcon, SubtitlesIcon, Volume2Icon, RotateCcwIcon } from 'lucide-react';
+import { CircleAlertIcon, MicIcon, MicOffIcon, PhoneOffIcon, MessageSquareIcon, SubtitlesIcon, Volume2Icon, RotateCcwIcon } from 'lucide-react';
 import { Button } from '../../ui/Button';
 import { cn } from '../../../utils/styles';
 import { AgentOrb, type OrbState } from './AgentOrb';
@@ -26,12 +26,20 @@ interface VoiceBubbleProps {
   onEndCall?: () => void;
   onSwitchToChat?: () => void;
   onStartVoice?: () => void;
+  /** The browser blocked the agent's audio; show a button that lets it play. */
+  audioBlocked?: boolean;
+  onEnableAudio?: () => void;
+  /** The microphone could not be turned on; shown with a Try again button. */
+  micError?: string | null;
+  onRetryMic?: () => void;
+  /** Shorter, without captions: for when a live transcript is shown under the bubble. */
+  compact?: boolean;
 }
 
 const stateLabels: Record<BubbleState, { label: string; desc: string }> = {
   idle: { label: 'Ready', desc: 'Click to talk with your voice agent' },
   connecting: { label: 'Connecting…', desc: 'Joining LiveKit room and reserving agent' },
-  waiting: { label: 'Waiting for agent', desc: 'Connected. Waiting for runtime worker to join' },
+  waiting: { label: 'Waiting for the agent to join…', desc: 'Connected to the room. The runtime worker usually joins within a few seconds.' },
   listening: { label: 'Listening…', desc: 'Speak to the agent naturally' },
   thinking: { label: 'Thinking…', desc: 'Generating reply with LLM' },
   speaking: { label: 'Speaking', desc: 'Agent is speaking through TTS' },
@@ -71,6 +79,11 @@ export function VoiceBubble({
   onEndCall,
   onSwitchToChat,
   onStartVoice,
+  audioBlocked = false,
+  onEnableAudio,
+  micError,
+  onRetryMic,
+  compact = false,
 }: VoiceBubbleProps) {
   const [showCaptions, setShowCaptions] = useState(true);
   const orbState = orbStates[state];
@@ -79,7 +92,7 @@ export function VoiceBubble({
   const inCall = orbState === 'connecting' || orbState === 'live';
 
   return (
-    <div className="flex min-h-[480px] flex-col items-center justify-between rounded-3xl border border-line bg-gradient-to-b from-surface to-canvas p-4 shadow-panel sm:p-6">
+    <div className={cn('flex flex-col items-center justify-between rounded-3xl', !compact && 'min-h-[480px]', 'border border-line bg-gradient-to-b from-surface to-canvas p-4 shadow-panel sm:p-6')}>
       {/* Top status bar */}
       <div className="flex w-full items-center justify-between text-xs text-muted">
         <span className="flex items-center gap-1.5 font-medium">
@@ -95,7 +108,7 @@ export function VoiceBubble({
         </span>
       </div>
 
-      <AgentOrb state={orbState} level={audioLevel} label={`Voice agent: ${info.label}`} className="my-8" />
+      <AgentOrb state={orbState} level={audioLevel} label={`Voice agent: ${info.label}`} className={compact ? 'my-4' : 'my-8'} small={compact} />
 
       {/* State label & description */}
       <div className="text-center">
@@ -103,8 +116,33 @@ export function VoiceBubble({
         <p className="mt-1 max-w-sm text-sm text-muted">{errorMessage || info.desc}</p>
       </div>
 
+      {inCall && audioBlocked && (
+        <div role="alert" className="mt-4 flex w-full max-w-lg flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3 text-sm">
+          <p className="min-w-0 flex-1 text-ink">Your browser paused the agent’s audio until you allow it.</p>
+          <Button variant="primary" size="sm" className="rounded-full" onClick={onEnableAudio}>
+            <Volume2Icon className="h-4 w-4" aria-hidden />
+            Enable audio
+          </Button>
+        </div>
+      )}
+
+      {inCall && micError && (
+        <div role="alert" className="mt-4 flex w-full max-w-lg flex-wrap items-center justify-between gap-3 rounded-2xl border border-danger/30 bg-danger-soft p-3 text-sm">
+          <p className="flex min-w-0 flex-1 items-start gap-2 text-ink">
+            <CircleAlertIcon className="mt-0.5 h-4 w-4 shrink-0 text-danger" aria-hidden />
+            {micError}
+          </p>
+          {onRetryMic && (
+            <Button variant="secondary" size="sm" className="rounded-full" onClick={onRetryMic}>
+              <RotateCcwIcon className="h-4 w-4" aria-hidden />
+              Try again
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Live Agent Captions */}
-      {showCaptions && (
+      {showCaptions && !compact && (
         <div className="mt-4 min-h-[50px] w-full max-w-lg rounded-2xl border border-line bg-surface/70 p-3 text-center text-sm text-ink-soft">
           {captionText ? (
             <p className="font-medium leading-relaxed text-ink">"{captionText}"</p>
@@ -141,16 +179,18 @@ export function VoiceBubble({
           </Button>
         )}
 
-        <Button
-          variant="ghost"
-          size="sm"
-          className="rounded-full"
-          onClick={() => setShowCaptions((v) => !v)}
-          title="Toggle agent speech captions"
-        >
-          <SubtitlesIcon className="h-4 w-4" aria-hidden />
-          {showCaptions ? 'Hide captions' : 'Show captions'}
-        </Button>
+        {!compact && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="rounded-full"
+            onClick={() => setShowCaptions((v) => !v)}
+            title="Toggle agent speech captions"
+          >
+            <SubtitlesIcon className="h-4 w-4" aria-hidden />
+            {showCaptions ? 'Hide captions' : 'Show captions'}
+          </Button>
+        )}
 
         {onSwitchToChat && (
           <Button variant="ghost" size="sm" className="rounded-full" onClick={onSwitchToChat} title="Switch to text chat">

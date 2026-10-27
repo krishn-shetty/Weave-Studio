@@ -52,8 +52,6 @@ export function AccordionItem({
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     transition,
-    borderRadius: '12px',
-    border: '1px solid var(--border)',
   };
 
   return (
@@ -80,13 +78,12 @@ export function AccordionItem({
         ref={setNodeRef}
         style={style}
         className={cn(
-          'relative rounded-[12px] bg-surface transition-all duration-150',
-          // Border and subtle shadow
-          'shadow-sm',
-          // Hover and focus states
-          !isCurrentActive && 'hover:border-[var(--border-strong)] hover:shadow-md',
-          expanded && 'border-[var(--border-strong)] shadow-sm',
-          'focus-within:ring-2 focus-within:ring-accent/40 focus-within:border-accent',
+          'relative rounded-xl transition-all duration-200 bg-surface',
+          'border shadow-xs',
+          expanded
+            ? 'border-accent/40 ring-1 ring-accent/25 shadow-sm'
+            : 'border-line hover:border-line-strong hover:shadow-panel',
+          'focus-within:border-accent/60 focus-within:ring-2 focus-within:ring-accent/30',
           // Placeholder state while lifted card is in DragOverlay
           isCurrentActive && 'opacity-40 border-dashed border-accent/60 bg-subtle/30 pointer-events-none select-none',
           className
@@ -94,7 +91,7 @@ export function AccordionItem({
       >
         {hasProblem && (
           <div
-            className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
+            className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-xl z-10 pointer-events-none"
             aria-hidden="true"
           />
         )}

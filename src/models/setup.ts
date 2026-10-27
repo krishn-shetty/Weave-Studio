@@ -592,6 +592,115 @@ export function setLookup(config: AgentConfig, on: boolean, { url = '', finds = 
   return { config: giveTool(next, tool.id), problem: '' };
 }
 
+// ---- tools in an old shape ----------------------------------------------------------------------------------------------------------------------
+// Drafts saved by earlier versions of the studio can hold tools the server's schema refuses: `type: "end_call"` and
+// `type: "transfer"` (now built-ins), and web lookups with no request or address. The first two are rewritten in place under
+// the same id, so every agent, test and hook that names them still does. A lookup with no request has nothing to rebuild
+// from, so it is taken off (with every agent's list) unless something else still uses it.
+
+const TOOL_TYPES = ['builtin', 'code', 'http', 'knowledge', 'mcp', 'task'];
+
+export interface OldTool {
+  id: string;
+  description: string;
+  fix: 'end_call' | 'hand_over' | 'remove' | 'add_parameters' | 'manual';
+  /** In plain words, what the repair does with it. */
+  change: string;
+}
+
+/** The tools a repair would change, and how. Empty when every tool already has a shape the server accepts. */
+export function oldToolsOf(config: AgentConfig): OldTool[] {
+  const declared = isObj(config.connections) ? Object.keys(config.connections as Json) : [];
+  return tools(config).flatMap((t): OldTool[] => {
+    const description = typeof t.description === 'string' ? t.description : '';
+    const name = `“${t.id}”`;
+    if (t.type === 'end_call') return [{ id: t.id, description, fix: 'end_call', change: `${name} becomes the built-in end-the-conversation action.` }];
+    if (t.type === 'transfer') {
+      return [{ id: t.id, description, fix: 'hand_over', change: `${name} becomes the built-in pass-to-a-person action. Until a number is set, callers hear a callback line.` }];
+    }
+    if (t.type === 'http' && !isObj(t.request)) {
+      return usedElsewhereThanAgents(config, t.id)
+        ? [{ id: t.id, description, fix: 'manual', change: `${name} has no web address and something besides the agents uses it. Give it a request, or remove it, by hand.` }]
+        : [{ id: t.id, description, fix: 'remove', change: `${name} has no web address to call, so it is removed. Add it again under “Look something up”.` }];
+    }
+    if (t.type === 'http' && typeof t.connection === 'string' && !declared.includes(t.connection)) {
+      return [{ id: t.id, description, fix: 'manual', change: `${name} uses the connection “${t.connection}”, which is not declared. Declare it or pick another, by hand.` }];
+    }
+    if (t.type === 'http' && !isObj(t.parameters)) return [{ id: t.id, description, fix: 'add_parameters', change: `${name} gets an empty list of inputs, which the server requires.` }];
+    if (!TOOL_TYPES.includes(t.type)) return [{ id: t.id, description, fix: 'manual', change: `${name} has the type “${t.type}”, which the server does not know. Change it by hand.` }];
+    return [];
+  });
+}
+
+/** Whether anything but the agents' own tool lists names a tool (a test, a hook, a guardrail...). */
+function usedElsewhereThanAgents(config: AgentConfig, id: string): boolean {
+  const rest = clone(config) as Json;
+  delete rest.tools;
+  list<Json>((rest.agents as Json | undefined)?.items).forEach((a) => {
+    if (isObj(a)) a.tools = [];
+  });
+  let found = false;
+  const visit = (node: unknown, key: string) => {
+    if (found) return;
+    if (Array.isArray(node)) {
+      if (key === 'tools' && node.includes(id)) found = true;
+      node.forEach((x) => visit(x, key));
+    } else if (isObj(node)) {
+      Object.entries(node).forEach(([k, v]) => {
+        if (typeof v === 'string') {
+          if (['tool', 'then', 'tool_called', 'tool_not_called'].includes(k) && v === id) found = true;
+        } else visit(v, k);
+      });
+    }
+  };
+  visit(rest, '');
+  return found;
+}
+
+/** Applies every automatic fix oldToolsOf lists; `manual` ones are left as they are. */
+export function repairOldTools(config: AgentConfig): AgentConfig {
+  const found = oldToolsOf(config).filter((o) => o.fix !== 'manual');
+  if (!found.length) return config;
+  const next = clone(config);
+  const byId = new Map(found.map((o) => [o.id, o]));
+  const removed = found.filter((o) => o.fix === 'remove').map((o) => o.id);
+
+  next.tools = list<Tool>(next.tools).flatMap((t) => {
+    const fix = isObj(t) ? byId.get(t.id)?.fix : undefined;
+    if (!fix) return [t];
+    if (fix === 'remove') return [];
+    if (fix === 'add_parameters') return [{ ...t, parameters: { type: 'object', properties: {} } }];
+    if (fix === 'end_call') {
+      addMessage(next, GOODBYE);
+      return [{ id: t.id, type: 'builtin', builtin: 'end_call', description: t.description || 'Ends the conversation. Use it after saying goodbye, when the person has nothing more to ask.', params: { say: { message: GOODBYE.id } } }];
+    }
+    // hand_over: the transfer the old tool stood for, with whatever number it carried.
+    addMessage(next, CALLBACK_MESSAGE);
+    const telephony = (isObj(next.telephony) ? next.telephony : {}) as Json;
+    const transferId = freshId(list<Json>(telephony.transfers).map((x) => String(x?.id ?? '')), TRANSFER_ID);
+    const target = [t.target, t.number, t.to].find((v) => typeof v === 'string' && v.trim()) ?? '';
+    telephony.transfers = [...list<Json>(telephony.transfers), { id: transferId, description: 'A person to take over. Until a number is set, callers hear the callback line.', method: 'sip_refer', target }];
+    next.telephony = telephony;
+    return [
+      {
+        id: t.id,
+        type: 'builtin',
+        builtin: 'transfer_or_callback',
+        description: t.description || 'Use when the caller asks for a person, or you cannot help them.',
+        params: { transfer: transferId, fallback: [{ type: 'say', text: { message: CALLBACK_MESSAGE.id } }] },
+      },
+    ];
+  }) as unknown as ToolDefinition[];
+  if (!(next.tools as unknown[]).length) delete next.tools;
+
+  if (removed.length) {
+    list<AgentRole>(next.agents?.items).forEach((agent) => {
+      if (Array.isArray(agent.tools)) agent.tools = agent.tools.filter((id) => !removed.includes(id));
+    });
+  }
+  return next;
+}
+
 // ---- starters -----------------------------------------------------------------------------------------------------------------------------------
 /**
  * A new agent's draft: the minimal draft the server made for it (POST /bots), with the starter's content laid on top

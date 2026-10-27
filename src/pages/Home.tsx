@@ -3,18 +3,18 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowRightIcon,
   BotIcon,
+  CheckIcon,
   ExternalLinkIcon,
   HistoryIcon,
-  ListIcon,
   PlayIcon,
   PlusIcon,
   RocketIcon,
-  TableIcon,
   WrenchIcon,
 } from 'lucide-react';
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
+import { Segmented } from '../components/ui/Segmented';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Tooltip } from '../components/ui/Tooltip';
 import {
@@ -27,10 +27,21 @@ import { CreateAgentDialog } from '../components/agents/CreateAgentDialog';
 import { AuditTrailDialog } from '../components/ui/AuditTrailDialog';
 import { currentDeployments, environments, envLabel, envShort, pendingDeployment } from '../utils/agentStatus';
 import { useAgentsReadiness } from '../hooks/useReadiness';
-import { ProgressRing, ReadinessChecklist, StepIcon } from '../components/agent/Readiness';
+import { FirstRunChecklist } from '../components/home/FirstRunChecklist';
 import { useStepLink } from '../hooks/useStepLink';
 import { timeAgo } from '../utils/format';
 import { cn } from '../utils/styles';
+import type { StageId } from '../types/studio';
+
+const stages: { id: StageId; label: string }[] = [
+  { id: 'build', label: 'Build' },
+  { id: 'test', label: 'Test' },
+  { id: 'release', label: 'Release' },
+  { id: 'monitor', label: 'Monitor' },
+];
+
+/** Where a page sits in Build -> Test -> Release -> Monitor (Overview and setup count as Build). */
+const stageIndexOf = (stage: StageId) => Math.max(0, stages.findIndex((s) => s.id === stage));
 
 const actionVerb = {
   created: 'created',
@@ -80,6 +91,8 @@ export function Home() {
   // The same readiness model as the agent's own pages and the agent list.
   const focusState = useAgentsReadiness(focus ? [focus] : [])[focus?.id ?? ''];
   const stepLink = useStepLink(focus?.id ?? '');
+  const next = focusState?.readiness.next ?? null;
+  const stageIndex = next ? stageIndexOf(next.target.stage) : stages.length - 1;
 
   const totalPages = Math.max(1, Math.ceil(liveAgents.length / livePageSize));
   const safePage = Math.min(livePage, totalPages);
@@ -115,44 +128,68 @@ export function Home() {
         )}
       </div>
 
+      {showChecklist && (
+        <div className="mt-6">
+          <FirstRunChecklist agent={focus} state={focusState} onOpenCreate={() => setCreateOpen(true)} onDismiss={handleDismissChecklist} />
+        </div>
+      )}
+
       {focus && focusState ? (
-        <section aria-labelledby="getting-started" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <ProgressRing done={focusState.readiness.done + 1} total={focusState.readiness.total + 1} size={48} />
-              <div>
-                <h2 id="getting-started" className="text-lg font-semibold tracking-tight text-ink">Getting started</h2>
-                <p className="mt-0.5 text-[13px] text-muted">
-                  Your most recently edited agent:{' '}
-                  <Link to={`/agents/${focus.id}`} className="font-medium text-ink hover:underline">{focus.name}</Link>{' '}
-                  <span className="font-mono text-xs">{focus.id}</span>
-                </p>
+        <section aria-labelledby="next-step" className="mt-6 rounded-xl border border-line bg-surface p-6 shadow-panel lg:p-8">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-[13px] text-muted">
+            <span>Next step</span>
+            <span aria-hidden>·</span>
+            <Link to={`/agents/${focus.id}`} className="font-medium text-ink hover:underline">
+              {focus.name}
+            </Link>
+            <span className="font-mono text-xs">{focus.id}</span>
+          </div>
+          <div className="mt-3 grid gap-8 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <h2 id="next-step" className="text-xl font-semibold tracking-tight text-ink">
+                {next ? next.label : `${focus.name} is ready and live`}
+              </h2>
+              <p className={cn('mt-2 max-w-xl text-sm leading-relaxed', next?.state === 'blocked' ? 'text-danger' : 'text-ink-soft')}>
+                {next ? next.text : 'Every step is done. Keep an eye on how its calls go.'}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {next ? (
+                  <Button variant={next.state === 'blocked' ? 'danger' : 'primary'} onClick={() => navigate(stepLink(next))}>
+                    {stepLink(next).includes('/setup/') ? 'Continue setup' : `Go to ${stages[stageIndex].label}`}
+                    <ArrowRightIcon className="h-4 w-4" aria-hidden />
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={() => navigate(`/agents/${focus.id}/monitor`)}>
+                    Go to Monitor
+                    <ArrowRightIcon className="h-4 w-4" aria-hidden />
+                  </Button>
+                )}
               </div>
             </div>
-            {focusState.readiness.next ?
-            <Button
-              variant={focusState.readiness.next.state === 'blocked' ? 'danger' : 'primary'}
-              onClick={() => focusState.readiness.next && navigate(stepLink(focusState.readiness.next))}>
-                Next: {focusState.readiness.next.label}
-                <ArrowRightIcon className="h-4 w-4" aria-hidden />
-              </Button> :
-            <span className="text-sm font-medium text-success">{focus.name} is ready and live</span>}
+            <ol className="flex flex-wrap items-center gap-1.5" aria-label="Where this agent is in the journey">
+              {stages.map((s, i) => {
+                const done = i < stageIndex || (!next && i === stageIndex);
+                const current = !!next && i === stageIndex;
+                return (
+                  <li key={s.id} className="flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium',
+                        done && 'bg-success-soft text-success',
+                        current && 'bg-ink text-white',
+                        !done && !current && 'bg-subtle text-muted'
+                      )}
+                      aria-current={current ? 'step' : undefined}
+                    >
+                      {done && <CheckIcon className="h-3 w-3" aria-hidden />}
+                      {s.label}
+                    </span>
+                    {i < stages.length - 1 && <span className="h-px w-3 bg-line-strong" aria-hidden />}
+                  </li>
+                );
+              })}
+            </ol>
           </div>
-          {showChecklist ?
-          <div className="mt-5 space-y-2">
-              <div className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-2.5">
-                <StepIcon state="done" />
-                <p className="flex-1 text-sm font-medium text-ink">Create an agent</p>
-              </div>
-              <ReadinessChecklist agentId={focus.id} readiness={focusState.readiness} compact />
-              <button type="button" onClick={handleDismissChecklist} className="text-xs font-medium text-muted hover:text-ink hover:underline">
-                Hide the steps
-              </button>
-            </div> :
-          <button type="button" onClick={handleReopenChecklist} className="mt-4 text-xs font-medium text-accent hover:underline">
-              Show every step
-            </button>
-          }
         </section>
       ) : (
         <section className="mt-6 rounded-xl border border-line bg-surface p-8 shadow-panel">
@@ -168,7 +205,7 @@ export function Home() {
 
       <div className="mt-10 grid gap-10 lg:grid-cols-[1.6fr_1fr]">
         <section aria-labelledby="whats-live">
-          <div className="flex items-baseline justify-between">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 id="whats-live" className="text-sm font-semibold text-ink">
                 What’s live
@@ -176,34 +213,16 @@ export function Home() {
               <span className="flex h-2 w-2 rounded-full bg-success animate-pulse" />
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center rounded-lg border border-line bg-surface p-0.5">
-                <Tooltip content="Accordion live view with reordering & environment cards" position="top">
-                  <button
-                    type="button"
-                    onClick={() => setLiveViewMode('accordion')}
-                    className={cn(
-                      'p-1 rounded text-xs transition-colors',
-                      liveViewMode === 'accordion' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink'
-                    )}
-                    aria-label="Accordion view"
-                  >
-                    <ListIcon className="h-3.5 w-3.5" />
-                  </button>
-                </Tooltip>
-                <Tooltip content="Compact table grid view" position="top">
-                  <button
-                    type="button"
-                    onClick={() => setLiveViewMode('table')}
-                    className={cn(
-                      'p-1 rounded text-xs transition-colors',
-                      liveViewMode === 'table' ? 'bg-accent text-white shadow-sm' : 'text-muted hover:text-ink'
-                    )}
-                    aria-label="Table view"
-                  >
-                    <TableIcon className="h-3.5 w-3.5" />
-                  </button>
-                </Tooltip>
-              </div>
+              <Segmented
+                label="How to show what is live"
+                size="sm"
+                value={liveViewMode}
+                onChange={setLiveViewMode}
+                options={[
+                  { value: 'accordion', label: 'List' },
+                  { value: 'table', label: 'Table' },
+                ]}
+              />
               <Link to="/agents" className="text-[13px] font-medium text-accent hover:underline">
                 All agents
               </Link>

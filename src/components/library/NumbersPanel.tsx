@@ -61,28 +61,25 @@ export function NumbersPanel() {
 
   return (
     <div className="mt-6 space-y-6">
-      <div className="rounded-xl border border-line bg-surface p-5 shadow-panel">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-ink">Phone numbers</h2>
-            <p className="mt-0.5 text-xs text-muted">
-              Numbers the phone system knows (<code className="font-mono">GET /numbers</code>). A call to a number is answered by whatever
-              version of its agent is deployed to the number’s environment.
-            </p>
-            {settings && !settings.livekit_configured && (
-              <p className="mt-2 text-xs text-warning">The server says the phone system is not configured, so numbers can’t be added.</p>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
-              <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden />
-              Refresh
-            </Button>
-            <Button variant="primary" size="sm" onClick={() => setAdding(true)} disabled={!settings?.livekit_configured || agents.length === 0}>
-              <PlusIcon className="h-4 w-4" aria-hidden />
-              Add a number
-            </Button>
-          </div>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="max-w-2xl text-[13px] text-muted">
+            Numbers the phone system knows (<code className="font-mono text-xs">GET /numbers</code>). A call to a number is answered by whatever
+            version of its agent is deployed to the number’s environment.
+          </p>
+          {settings && !settings.livekit_configured && (
+            <p className="mt-2 text-xs text-warning">The server says the phone system is not configured, so numbers can’t be added.</p>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+            <RefreshCwIcon className={cn('h-3.5 w-3.5', loading && 'animate-spin')} aria-hidden />
+            Refresh
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setAdding(true)} disabled={!settings?.livekit_configured || agents.length === 0}>
+            <PlusIcon className="h-4 w-4" aria-hidden />
+            Add a number
+          </Button>
         </div>
       </div>
 

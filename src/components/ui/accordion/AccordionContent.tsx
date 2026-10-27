@@ -31,11 +31,11 @@ export function AccordionContent({ className, children }: AccordionContentProps)
               opacity: { duration: 0.1 },
             },
           }}
-          className="overflow-hidden rounded-b-[11px]"
+          className="overflow-hidden rounded-b-xl"
         >
           <div
             className={cn(
-              'border-t border-line bg-canvas/30 p-5 sm:p-6 text-sm text-ink-soft',
+              'border-t border-line/70 bg-canvas/20 p-5 sm:p-6 text-sm text-ink-soft',
               className
             )}
           >

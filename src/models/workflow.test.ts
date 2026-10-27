@@ -3,6 +3,7 @@ import type { AgentConfig } from '../types/studio';
 import { unknownKeys } from '../test/schemaKeys';
 import {
   PRESETS,
+  addConnectionFor,
   addPreset,
   buildGraph,
   canConnect,
@@ -285,5 +286,31 @@ describe('places', () => {
     expect(parseNodeId(nodeId('knowledge', 'x'))).toEqual({ kind: 'knowledge', ref: 'x' });
     expect(parseNodeId(nodeId('channel', 'web-chat'))).toEqual({ kind: 'channel', ref: 'web-chat' });
     expect(parseNodeId('greeter')).toEqual({ kind: 'agent', ref: 'greeter' });
+  });
+});
+
+describe('addConnectionFor', () => {
+  const withTool = (type: 'http' | 'mcp') => addPreset({ agents: { entry: 'a', items: [{ id: 'a', name: 'A', instructions: { role: 'x' }, tools: [] }] } } as unknown as AgentConfig, type).config;
+
+  it('declares an HTTP connection from the address and points the tool at it', () => {
+    const r = addConnectionFor(withTool('http'), 0, 'https://api.example.com/v1/');
+    expect(r.problem).toBe('');
+    expect(r.config.connections).toEqual({ api: { type: 'http', base_url: 'https://api.example.com/v1' } });
+    expect((r.config.tools as Record<string, unknown>[])[0].connection).toBe('api');
+    expect(unknownKeys(r.config)).toEqual([]);
+  });
+
+  it('declares an MCP server for an MCP tool, with a fresh id when the name is taken', () => {
+    const first = addConnectionFor(withTool('mcp'), 0, 'mcp.example.com/mcp').config;
+    const again = addConnectionFor(first, 0, 'https://mcp.other.com').config;
+    expect(again.connections).toEqual({ mcp: { type: 'mcp', url: 'https://mcp.example.com/mcp' }, mcp_2: { type: 'mcp', url: 'https://mcp.other.com' } });
+    expect((again.tools as Record<string, unknown>[])[0].server).toBe('mcp_2');
+  });
+
+  it('refuses an address it cannot use, and a tool that takes no connection', () => {
+    const http = withTool('http');
+    expect(addConnectionFor(http, 0, 'not a url')).toEqual({ config: http, problem: expect.stringMatching(/address it answers on/) });
+    expect(addConnectionFor(http, 0, 'ftp://files.example.com').problem).not.toBe('');
+    expect(addConnectionFor(http, 5, 'https://api.example.com').problem).toMatch(/Only HTTP and MCP/);
   });
 });

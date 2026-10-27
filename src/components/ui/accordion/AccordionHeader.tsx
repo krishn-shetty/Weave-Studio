@@ -29,14 +29,14 @@ export function AccordionHeader({
     <div
       className={cn(
         'group relative w-full select-none transition-colors cursor-pointer',
-        'rounded-t-[11px]',
-        !isExpanded && 'rounded-b-[11px]',
-        'hover:bg-subtle/50',
-        isExpanded ? 'bg-subtle/30' : 'bg-surface',
+        'rounded-t-xl',
+        !isExpanded && 'rounded-xl',
+        'hover:bg-canvas/50',
+        isExpanded ? 'bg-surface' : 'bg-surface',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset',
         // 5-column layout at >= 900px, 4-column 2-row layout below 900px
-        'grid grid-cols-[24px_40px_minmax(0,1fr)_auto] min-[900px]:grid-cols-[24px_40px_minmax(0,1fr)_auto_auto]',
-        'gap-x-4 gap-y-2 items-center px-5 py-4 min-h-[76px]',
+        'grid grid-cols-[24px_36px_minmax(0,1fr)_auto] min-[900px]:grid-cols-[24px_36px_minmax(0,1fr)_auto_auto]',
+        'gap-x-3.5 gap-y-2 items-center px-4 sm:px-5 py-3 min-h-[64px]',
         className
       )}
       onClick={item.toggle}
@@ -55,7 +55,7 @@ export function AccordionHeader({
       {/* 3px Red Left Accent Bar for rows with problems */}
       {hasProblem && (
         <div
-          className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
+          className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-xl z-10 pointer-events-none"
           aria-hidden="true"
         />
       )}
@@ -64,6 +64,7 @@ export function AccordionHeader({
       <div
         className="col-start-1 row-start-1 row-span-2 min-[900px]:row-span-1 flex items-center justify-center w-6 shrink-0 self-center"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         {enableReordering && enableDragAndDrop && showDragHandle && (
           <Tooltip
@@ -76,6 +77,7 @@ export function AccordionHeader({
               {...item.dragHandleProps}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
+                e.stopPropagation();
                 item.dragHandleProps?.onKeyDown?.(e);
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
@@ -97,10 +99,10 @@ export function AccordionHeader({
         )}
       </div>
 
-      {/* 2. [icon] (40px) */}
-      <div className="col-start-2 row-start-1 row-span-2 min-[900px]:row-span-1 flex items-center justify-center w-10 shrink-0 self-center">
+      {/* 2. [icon] (36px) */}
+      <div className="col-start-2 row-start-1 row-span-2 min-[900px]:row-span-1 flex items-center justify-center w-9 shrink-0 self-center">
         {icon && (
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-subtle text-ink">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft/30 text-accent">
             {icon}
           </div>
         )}
@@ -108,13 +110,13 @@ export function AccordionHeader({
 
       {/* 3. [MAIN] (minmax(0, 1fr)) */}
       <div className="col-start-3 row-start-1 min-w-0 flex flex-col justify-center">
-        {/* Line 1: Agent name only (15px/600, ellipsis) */}
-        <div className="min-w-0 text-[15px] font-semibold text-ink leading-snug truncate">
+        {/* Line 1: Agent name only (14px/600, ellipsis) */}
+        <div className="min-w-0 text-sm font-semibold text-ink leading-snug truncate">
           {title}
         </div>
-        {/* Line 2: Slug / meta (13px, muted, ellipsis) */}
+        {/* Line 2: Slug / meta (12px, muted, ellipsis) */}
         {subtitle && (
-          <div className="min-w-0 text-[13px] text-muted leading-snug mt-0.5 truncate">
+          <div className="min-w-0 text-xs text-muted leading-snug mt-0.5 truncate">
             {subtitle}
           </div>
         )}
@@ -125,11 +127,12 @@ export function AccordionHeader({
         <div
           className={cn(
             'col-start-3 row-start-2 min-[900px]:col-start-4 min-[900px]:row-start-1',
-            'flex items-center gap-2 shrink-0',
+            'flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap',
             'justify-start min-[900px]:justify-end',
             'self-center'
           )}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
         >
           {statusContent}
         </div>
@@ -139,9 +142,10 @@ export function AccordionHeader({
       <div
         className={cn(
           'col-start-4 row-start-1 row-span-2 min-[900px]:col-start-5 min-[900px]:row-start-1 min-[900px]:row-span-1',
-          'flex items-center justify-end gap-2 shrink-0 flex-nowrap self-center'
+          'flex items-center justify-end gap-1.5 sm:gap-2 shrink-0 flex-nowrap self-center'
         )}
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
       >
         {children}
         {actions}
@@ -159,6 +163,7 @@ export function AccordionHeader({
             }}
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-subtle transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label={isExpanded ? 'Collapse section' : 'Expand section'}
+            aria-expanded={isExpanded}
           >
             <ChevronDownIcon
               className={cn(

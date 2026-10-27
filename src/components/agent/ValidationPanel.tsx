@@ -6,15 +6,48 @@ import { describePath } from '../../utils/validate';
 import { secretState } from '../../utils/providerOptions';
 import { useSecretKeys } from '../../hooks/useProviders';
 import { cn } from '../../utils/styles';
+import { oldToolsOf, repairOldTools } from '../../models/setup';
+import { Button } from '../ui/Button';
 
 interface ValidationPanelProps {
   view: ValidationView;
   config: AgentConfig;
   onGoTo: (path: Path) => void;
+  /** Puts a repaired config in the editor (undoable, saved like any edit). Absent when the draft cannot be edited. */
+  onRepair?: (config: AgentConfig) => void;
+}
+
+/** Tools saved by an older studio in a shape the server refuses, and the one-click repair. */
+function OldToolsRepair({ config, onRepair }: { config: AgentConfig; onRepair?: (config: AgentConfig) => void }) {
+  const found = oldToolsOf(config);
+  if (!found.length) return null;
+  const automatic = found.some((o) => o.fix !== 'manual');
+  return (
+    <div role="status" className="rounded-lg border border-warning/40 bg-warning-soft/40 p-3">
+      <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+        <TriangleAlertIcon className="h-4 w-4 shrink-0 text-warning" aria-hidden />
+        {found.length} {found.length === 1 ? 'tool is' : 'tools are'} in an old format the server no longer accepts
+      </p>
+      <ul className="mt-2 space-y-1.5 text-[13px] text-ink-soft">
+        {found.map((o) => (
+          <li key={o.id}>
+            {o.change}
+            {o.description && <span className="block text-xs text-muted">It was: {o.description}</span>}
+          </li>
+        ))}
+      </ul>
+      {automatic && onRepair && (
+        <Button size="sm" variant="primary" className="mt-3" onClick={() => onRepair(repairOldTools(config))}>
+          Repair {found.filter((o) => o.fix !== 'manual').length === 1 ? 'it' : 'them'}
+        </Button>
+      )}
+      {automatic && onRepair && <p className="mt-1.5 text-xs text-muted">You can undo it, and nothing is saved until you save.</p>}
+    </div>
+  );
 }
 
 /** The server's checks on the draft in the editor (POST /validate, or the report Save returned). */
-export function ValidationPanel({ view, config, onGoTo }: ValidationPanelProps) {
+export function ValidationPanel({ view, config, onGoTo, onRepair }: ValidationPanelProps) {
   const keys = useSecretKeys();
   const validation = view.report ?? view.previous;
   const validating = view.status === 'checking' || view.status === 'unknown';
@@ -63,6 +96,7 @@ export function ValidationPanel({ view, config, onGoTo }: ValidationPanelProps) 
       </div>
 
       <div className={cn('space-y-5 px-4 py-4 transition-opacity duration-150', validating && 'opacity-60')}>
+        <OldToolsRepair config={config} onRepair={onRepair} />
         {clean &&
         <div className="flex gap-2.5">
             <CircleCheckIcon className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />

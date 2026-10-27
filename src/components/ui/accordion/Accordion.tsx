@@ -27,7 +27,7 @@ export function Accordion<T = any>({
   getId,
   onReorder,
   onReorderById,
-  allowMultiple = true,
+  allowMultiple = false,
   expandedIds: controlledExpandedIds,
   defaultExpandedIds = [],
   onExpandedChange,

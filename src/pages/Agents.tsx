@@ -1,15 +1,16 @@
 import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  AlertCircleIcon,
   ArrowRightIcon,
   BotIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  CompassIcon,
   ExternalLinkIcon,
   EyeIcon,
-  FileCodeIcon,
   GripVerticalIcon,
   LayersIcon,
   ListIcon,
@@ -18,16 +19,15 @@ import {
   PlusIcon,
   RocketIcon,
   SearchIcon,
+  ShieldCheckIcon,
   TableIcon,
   WrenchIcon,
-  XCircleIcon,
 } from 'lucide-react';
 import { useStudio } from '../contexts/StudioContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/Button';
 import { StatusChip } from '../components/ui/StatusChip';
 import { Badge } from '../components/ui/Badge';
-import { TruncatedText } from '../components/ui/TruncatedText';
 import { Segmented } from '../components/ui/Segmented';
 import { Tooltip } from '../components/ui/Tooltip';
 import { toast } from '../components/ui/Toast';
@@ -74,6 +74,7 @@ export function Agents() {
   const pageSizeParam = Number(params.get('size') ?? '10') || 10;
   const [pageSize, setPageSize] = useState<number>(pageSizeParam);
   const [viewMode, setViewMode] = useState<'accordion' | 'table'>('accordion');
+  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
 
   // Custom ordering state
   const [customOrder, setCustomOrder] = useState<string[]>(() => {
@@ -426,16 +427,19 @@ export function Agents() {
             onReorderById={handleReorderById}
             enableReordering={true}
             enableDragAndDrop={true}
+            allowMultiple={false}
+            expandedIds={expandedAgentId ? [expandedAgentId] : []}
+            onExpandedChange={(ids) => setExpandedAgentId(ids.length > 0 ? ids[ids.length - 1] : null)}
             renderOverlay={(item) => (
               <div
                 className={cn(
-                  'grid grid-cols-[24px_40px_minmax(0,1fr)_auto_auto] gap-x-4 items-center px-5 py-4 min-h-[76px]',
-                  'select-none bg-surface rounded-[12px] relative'
+                  'grid grid-cols-[24px_36px_minmax(0,1fr)_auto_auto] gap-x-3.5 items-center px-4 sm:px-5 py-3 min-h-[64px]',
+                  'select-none bg-surface rounded-xl border border-accent/40 shadow-overlay relative'
                 )}
               >
                 {item.report?.valid === false && (
                   <div
-                    className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-[11px] z-10 pointer-events-none"
+                    className="absolute left-0 top-0 bottom-0 w-[3px] bg-danger rounded-l-xl z-10 pointer-events-none"
                     aria-hidden="true"
                   />
                 )}
@@ -444,41 +448,45 @@ export function Agents() {
                   <GripVerticalIcon className="h-4 w-4" />
                 </div>
                 {/* 2. Icon */}
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-subtle text-accent">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft/30 text-accent">
                   <BotIcon className="h-5 w-5" />
                 </div>
                 {/* 3. MAIN */}
                 <div className="min-w-0 flex flex-col justify-center">
-                  <div className="text-[15px] font-semibold text-ink leading-snug truncate">
+                  <div className="text-sm font-semibold text-ink leading-snug truncate">
                     {item.agent.name}
                   </div>
-                  <div className="text-[13px] text-muted leading-snug mt-0.5 truncate">
+                  <div className="text-xs text-muted leading-snug mt-0.5 truncate">
                     <span className="font-mono text-ink-soft">{item.agent.id}</span>
-                    {' · saved '}
-                    {timeAgo(item.agent.draft.saved_at)}
-                    {' by '}
-                    {item.agent.draft.saved_by}
+                    <span className="mx-1 text-muted/60">·</span>
+                    <span>saved {timeAgo(item.agent.draft.saved_at)} by {item.agent.draft.saved_by}</span>
                   </div>
                 </div>
                 {/* 4. STATUS */}
                 <div className="flex items-center justify-end gap-2 shrink-0">
                   {!!item.changes && (
-                    <Badge variant="neutral" className="h-6">
+                    <Badge variant="neutral" className="h-6 text-xs">
                       {item.changes} unpublished
                     </Badge>
                   )}
-                  <div className="w-[96px] min-w-[96px] flex justify-center">
-                    <ChecksBadge view={item.checks} className="w-full justify-center h-6" />
-                  </div>
-                  <div className="w-[100px] min-w-[100px] flex justify-center">
-                    <Badge variant="outline" mono className="w-full justify-center h-6">
-                      {item.latest ? item.latest.version : 'Unpublished'}
-                    </Badge>
-                  </div>
+                  {item.missing.length > 0 && (
+                    <StatusChip tone="warning" title={item.missing.join(', ')} className="h-6 text-xs">
+                      Missing secret
+                    </StatusChip>
+                  )}
+                  <ChecksBadge view={item.checks} className="h-6 text-xs" />
+                  {item.readiness && (
+                    <ReadinessIndicator readiness={item.readiness} />
+                  )}
+                  <Badge variant="outline" mono className="h-6 text-xs">
+                    {item.latest ? item.latest.version : 'Unpublished'}
+                  </Badge>
                 </div>
                 {/* 5. ACTIONS */}
-                <div className="flex items-center justify-end gap-2 text-muted">
-                  <ChevronDownIcon className="h-4 w-4" />
+                <div className="flex items-center justify-end gap-1.5 text-muted shrink-0">
+                  <div className="h-8 w-8 rounded-lg flex items-center justify-center">
+                    <ChevronDownIcon className="h-4 w-4" />
+                  </div>
                 </div>
               </div>
             )}
@@ -509,40 +517,52 @@ export function Agents() {
                     icon={<BotIcon className="h-5 w-5 text-accent" />}
                     hasProblem={report?.valid === false}
                     title={
-                      <TruncatedText
-                        text={agent.name}
-                        className="text-[15px] font-semibold text-ink leading-snug"
-                      >
-                        {agent.name}
-                      </TruncatedText>
+                      <Tooltip content={agent.name} position="top" disabled={agent.name.length < 24}>
+                        <div className="text-sm font-semibold text-ink leading-snug truncate">
+                          {agent.name}
+                        </div>
+                      </Tooltip>
                     }
                     subtitle={
-                      <TruncatedText
-                        text={`${agent.id} · saved ${timeAgo(agent.draft.saved_at)} by ${agent.draft.saved_by}`}
-                        className="text-[13px] text-muted leading-snug"
+                      <Tooltip
+                        content={
+                          <div className="text-left text-xs space-y-0.5">
+                            <div><span className="text-muted">Agent ID:</span> <span className="font-mono">{agent.id}</span></div>
+                            <div><span className="text-muted">Last saved:</span> {new Date(agent.draft.saved_at).toLocaleString()}</div>
+                            <div><span className="text-muted">Author:</span> {agent.draft.saved_by}</div>
+                          </div>
+                        }
+                        position="top"
                       >
-                        <span className="font-mono text-ink-soft">{agent.id}</span>
-                        {' · saved '}
-                        {timeAgo(agent.draft.saved_at)}
-                        {' by '}
-                        {agent.draft.saved_by}
-                      </TruncatedText>
+                        <div className="text-xs text-muted leading-snug mt-0.5 truncate cursor-default">
+                          <span className="font-mono text-ink-soft">{agent.id}</span>
+                          <span className="mx-1 text-muted/60">·</span>
+                          <span>saved {timeAgo(agent.draft.saved_at)} by {agent.draft.saved_by}</span>
+                        </div>
+                      </Tooltip>
                     }
                     status={
                       <>
                         {!!changes && (
-                          <Badge variant="neutral" className="h-6">
+                          <Badge variant="neutral" className="h-6 text-xs shrink-0">
                             {changes} unpublished
                           </Badge>
                         )}
-                        <div className="w-[96px] min-w-[96px] flex justify-center">
-                          <ChecksBadge view={checks} className="w-full justify-center h-6" />
+                        {missing.length > 0 && (
+                          <StatusChip tone="warning" title={missing.join(', ')} className="h-6 text-xs shrink-0">
+                            Missing secret
+                          </StatusChip>
+                        )}
+                        <div className="shrink-0 flex items-center">
+                          <ChecksBadge view={checks} className="h-6 text-xs" />
                         </div>
-                        <div className="hidden min-w-[150px] xl:block">
-                          {readiness && <NextStepCell agentId={agent.id} readiness={readiness} />}
-                        </div>
-                        <div className="w-[100px] min-w-[100px] flex justify-center">
-                          <Badge variant="outline" mono className="w-full justify-center h-6">
+                        {readiness && (
+                          <div className="shrink-0 flex items-center">
+                            <ReadinessIndicator readiness={readiness} />
+                          </div>
+                        )}
+                        <div className="shrink-0 flex items-center">
+                          <Badge variant="outline" mono className="h-6 text-xs">
                             {latest ? latest.version : 'Unpublished'}
                           </Badge>
                         </div>
@@ -575,116 +595,255 @@ export function Agents() {
                   />
 
                   <AccordionContent>
-                    <div className="space-y-6">
-                      <div className="grid gap-6 md:grid-cols-[1.4fr_1fr]">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left column: Deployments + Configuration Health */}
+                      <div className="lg:col-span-7 xl:col-span-8 space-y-5">
+                        {/* Active Deployments */}
                         <div>
-                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                            Active Deployments
-                          </h4>
-                          <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
+                          <div className="flex items-center justify-between mb-2.5">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                              <RocketIcon className="h-3.5 w-3.5 text-accent" />
+                              <span>Active Deployments</span>
+                            </h4>
+                            <span className="text-[11px] text-muted">
+                              {Object.keys(current).length > 0
+                                ? `${Object.keys(current).length} environment${Object.keys(current).length === 1 ? '' : 's'} live`
+                                : 'None deployed yet'}
+                            </span>
+                          </div>
+                          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
                             {environments.map((env) => {
                               const deployed = current[env];
+                              const isProd = env === 'production';
                               return (
                                 <div
                                   key={env}
-                                  className="rounded-lg border border-line bg-surface p-3 text-xs"
+                                  className={cn(
+                                    'flex flex-col justify-between rounded-xl border p-3.5 min-h-[88px] transition-colors',
+                                    deployed
+                                      ? isProd
+                                        ? 'border-accent/35 bg-accent-soft/20 dark:bg-accent-soft/10 shadow-xs'
+                                        : 'border-line-strong/60 bg-surface shadow-xs'
+                                      : 'border-line/60 bg-surface/60'
+                                  )}
                                 >
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-semibold text-ink">{envLabel(env)}</span>
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="text-xs font-semibold text-ink">
+                                      {envLabel(env)}
+                                    </span>
                                     {deployed ? (
-                                      <StatusChip tone={env === 'production' ? 'accent' : 'success'} dot>
+                                      <StatusChip
+                                        tone={isProd ? 'accent' : 'success'}
+                                        dot
+                                        className="text-[10px] h-5 px-1.5"
+                                      >
                                         Live
                                       </StatusChip>
                                     ) : (
-                                      <span className="text-[11px] text-muted">—</span>
+                                      <span className="text-[10px] font-medium text-muted/70 bg-subtle px-1.5 py-0.5 rounded">
+                                        Inactive
+                                      </span>
                                     )}
                                   </div>
-                                  <div className="mt-2 font-mono text-ink text-[13px]">
-                                    {deployed ? deployed.version : 'Not deployed'}
+                                  <div className="mt-2.5">
+                                    {deployed ? (
+                                      <div className="flex items-baseline gap-1.5">
+                                        <span className="font-mono text-xs font-medium text-ink">
+                                          {deployed.version}
+                                        </span>
+                                        {deployed.deployed_at && (
+                                          <span className="text-[10px] text-muted truncate">
+                                            · {timeAgo(deployed.deployed_at)}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div className="text-xs text-muted/70 font-mono">
+                                        Not deployed
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
+                        </div>
 
-                          {/* Validation summary */}
-                          <div className="mt-5">
-                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
-                              Configuration Health
+                        {/* Configuration Health */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between mb-2.5">
+                            <h4 className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                              <ShieldCheckIcon className="h-3.5 w-3.5 text-accent" />
+                              <span>Configuration Health</span>
                             </h4>
-                            {!report ? (
-                              <p className="mt-1.5 text-xs text-muted">
-                                {checks?.status === 'failed' ? `The server’s checks could not be run: ${checks.error}` : 'The server is checking the saved draft…'}
-                              </p>
-                            ) : report.valid ? (
-                              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-success font-medium">
-                                <CheckCircle2Icon className="h-3.5 w-3.5" />
-                                The server’s checks pass.
-                              </p>
-                            ) : (
-                              <div className="mt-2 space-y-1.5">
-                                {report.errors.map((err, i) => (
-                                  <div
-                                    key={i}
-                                    className="flex items-center justify-between rounded-lg bg-danger-soft/50 px-3 py-2 text-xs text-danger"
-                                  >
-                                    <span>{err.message}</span>
+                            {report && report.valid && (
+                              <Badge variant="success" dot className="h-5 text-[11px]">
+                                All Checks Passed
+                              </Badge>
+                            )}
+                            {report && !report.valid && (
+                              <Badge variant="danger" dot className="h-5 text-[11px]">
+                                {report.errors.length} {report.errors.length === 1 ? 'Error' : 'Errors'} Found
+                              </Badge>
+                            )}
+                          </div>
+
+                          {!report ? (
+                            <div className="rounded-xl border border-line bg-surface p-4 text-xs text-muted flex items-center gap-2.5">
+                              {checks?.status === 'failed' ? (
+                                <>
+                                  <AlertCircleIcon className="h-4 w-4 text-warning shrink-0" />
+                                  <span>The server’s checks could not be run: {checks.error}</span>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-accent border-t-transparent shrink-0" />
+                                  <span>The server is checking the saved draft…</span>
+                                </>
+                              )}
+                            </div>
+                          ) : report.valid ? (
+                            <div className="flex items-center gap-3 rounded-xl border border-success/30 bg-success-soft/30 dark:bg-success-soft/10 p-4 text-xs text-success">
+                              <CheckCircle2Icon className="h-4 w-4 shrink-0 text-success" />
+                              <div className="min-w-0">
+                                <div className="font-semibold text-ink">Configuration checks pass</div>
+                                <div className="text-muted mt-0.5">The draft configuration has passed all schema validations and is ready for release.</div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="max-h-[260px] overflow-y-auto overflow-x-hidden pr-1.5 space-y-2.5">
+                              {report.errors.map((err, i) => (
+                                <div
+                                  key={i}
+                                  className="group flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-lg border border-danger/25 bg-danger-soft/30 dark:bg-danger-soft/15 p-3 text-xs text-danger transition-colors hover:border-danger/40"
+                                >
+                                  <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                    <AlertCircleIcon className="h-4 w-4 text-danger shrink-0 mt-0.5" />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="font-medium text-ink break-words leading-relaxed">
+                                        {err.message}
+                                      </div>
+                                      {err.path && (
+                                        <div className="mt-1 flex items-center gap-1 text-[11px] text-muted">
+                                          <span className="font-mono text-danger/80 bg-danger-soft/50 dark:bg-danger-soft/30 px-1.5 py-0.5 rounded break-all">
+                                            {err.path}
+                                          </span>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 self-end sm:self-center">
                                     <Button
                                       size="sm"
                                       variant="secondary"
                                       onClick={() => navigate(`/agents/${agent.id}/build`)}
-                                      className="h-6 text-[11px] py-0 px-2"
+                                      className="h-7 text-xs px-2.5 bg-surface hover:bg-subtle text-ink border-line shadow-xs font-medium"
                                     >
-                                      Fix in Build
+                                      <span>Fix in Build</span>
+                                      <ArrowRightIcon className="h-3 w-3 ml-1 text-accent" />
                                     </Button>
                                   </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right column: Quick Navigation */}
+                      <div className="lg:col-span-5 xl:col-span-4 rounded-xl border border-line bg-surface p-4 sm:p-5 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between border-b border-line/60 pb-3">
+                          <h4 className="text-xs font-semibold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                            <CompassIcon className="h-3.5 w-3.5 text-accent" />
+                            <span>Quick Navigation</span>
+                          </h4>
+                          <span className="text-[11px] text-muted">Workspace Stages</span>
                         </div>
 
-                        {/* Quick Actions & Journey panel */}
-                        <div className="rounded-lg border border-line bg-surface/70 p-4 space-y-3">
-                          <h4 className="text-xs font-semibold text-ink">Quick Navigation</h4>
-                          <div className="grid gap-2">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="justify-start"
-                              onClick={() => navigate(`/agents/${agent.id}/build`)}
-                            >
-                              <WrenchIcon className="h-3.5 w-3.5 mr-2 text-accent" />
-                              <span>Configure in Build Stage</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="justify-start"
-                              onClick={() => navigate(`/agents/${agent.id}/test`)}
-                            >
-                              <PlayIcon className="h-3.5 w-3.5 mr-2 text-success" />
-                              <span>Test Conversation Live</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="justify-start"
-                              onClick={() => navigate(`/agents/${agent.id}/release`)}
-                            >
-                              <RocketIcon className="h-3.5 w-3.5 mr-2 text-info" />
-                              <span>Release & Deployment</span>
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="justify-start text-muted hover:text-ink"
-                              onClick={() => navigate(`/agents/${agent.id}/monitor`)}
-                            >
-                              <LayersIcon className="h-3.5 w-3.5 mr-2" />
-                              <span>Performance Telemetry</span>
-                            </Button>
-                          </div>
+                        <div className="grid gap-2">
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/agents/${agent.id}/build`)}
+                            className="group flex w-full items-center justify-between rounded-lg border border-line/70 bg-canvas/40 p-2.5 text-left transition-all duration-150 hover:border-accent/40 hover:bg-accent-soft/20 dark:hover:bg-accent-soft/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent-soft/40 text-accent group-hover:scale-105 transition-transform">
+                                <WrenchIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-ink group-hover:text-accent transition-colors">
+                                  Configure in Build Stage
+                                </div>
+                                <div className="text-[11px] text-muted truncate">
+                                  Prompts, tools, models & instructions
+                                </div>
+                              </div>
+                            </div>
+                            <ChevronRightIcon className="h-4 w-4 text-muted/60 group-hover:text-accent group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/agents/${agent.id}/test`)}
+                            className="group flex w-full items-center justify-between rounded-lg border border-line/70 bg-canvas/40 p-2.5 text-left transition-all duration-150 hover:border-success/40 hover:bg-success-soft/20 dark:hover:bg-success-soft/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success-soft/40 text-success group-hover:scale-105 transition-transform">
+                                <PlayIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-ink group-hover:text-success transition-colors">
+                                  Test Conversation Live
+                                </div>
+                                <div className="text-[11px] text-muted truncate">
+                                  Test conversations & scenario runs
+                                </div>
+                              </div>
+                            </div>
+                            <ChevronRightIcon className="h-4 w-4 text-muted/60 group-hover:text-success group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/agents/${agent.id}/release`)}
+                            className="group flex w-full items-center justify-between rounded-lg border border-line/70 bg-canvas/40 p-2.5 text-left transition-all duration-150 hover:border-info/40 hover:bg-info-soft/20 dark:hover:bg-info-soft/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-info"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-info-soft/40 text-info group-hover:scale-105 transition-transform">
+                                <RocketIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-ink group-hover:text-info transition-colors">
+                                  Release & Deployment
+                                </div>
+                                <div className="text-[11px] text-muted truncate">
+                                  Publish versions & target environments
+                                </div>
+                              </div>
+                            </div>
+                            <ChevronRightIcon className="h-4 w-4 text-muted/60 group-hover:text-info group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/agents/${agent.id}/monitor`)}
+                            className="group flex w-full items-center justify-between rounded-lg border border-line/70 bg-canvas/40 p-2.5 text-left transition-all duration-150 hover:border-line-strong hover:bg-subtle/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-line-strong"
+                          >
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-subtle text-ink-soft group-hover:scale-105 transition-transform">
+                                <LayersIcon className="h-4 w-4" />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-ink group-hover:text-ink transition-colors">
+                                  Performance Telemetry
+                                </div>
+                                <div className="text-[11px] text-muted truncate">
+                                  Traces, latency, tokens & cost analytics
+                                </div>
+                              </div>
+                            </div>
+                            <ChevronRightIcon className="h-4 w-4 text-muted/60 group-hover:text-ink group-hover:translate-x-0.5 transition-all shrink-0 ml-2" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -736,6 +895,7 @@ function WorkspaceAction({ agentId, agentName }: { agentId: string; agentName: s
       ref={containerRef}
       className="relative inline-flex items-center"
       onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <div className="inline-flex h-8 items-stretch rounded-lg border border-accent/30 bg-accent-soft/25 p-0.5 shadow-xs transition-colors hover:border-accent/50 hover:bg-accent-soft/40 focus-within:ring-2 focus-within:ring-accent/40">
         <Tooltip content="Open workspace builder" position="top">
@@ -823,6 +983,72 @@ function ChecksBadge({ view, className }: { view: ValidationView | undefined; cl
   }
   if (view?.status === 'failed') return <Badge variant="warning" className={className} title={view.error ?? undefined}>Not checked</Badge>;
   return <Badge variant="neutral" className={className}>Checking…</Badge>;
+}
+
+/** Small, visually consistent readiness completion indicator with an accessible tooltip */
+function ReadinessIndicator({ readiness }: { readiness: Readiness }) {
+  const { done, total, next } = readiness;
+  const percent = total > 0 ? Math.round((done / total) * 100) : 100;
+  const isComplete = total > 0 && done >= total;
+  const remaining = Math.max(0, total - done);
+
+  return (
+    <Tooltip
+      position="top"
+      content={
+        <div className="p-1 max-w-[240px] text-left space-y-1.5">
+          <div className="flex items-center justify-between gap-3 font-semibold text-xs border-b border-line/50 pb-1 text-ink">
+            <span>Readiness Checklist</span>
+            <span className="font-mono text-accent">{percent}%</span>
+          </div>
+          <div className="text-[11px] text-muted">
+            {done} of {total} checks passed
+            {remaining > 0 ? ` · ${remaining} task${remaining === 1 ? '' : 's'} remaining` : ' · Ready for launch'}
+          </div>
+          {next && (
+            <div className="pt-1 border-t border-line/30 text-[11px]">
+              <span className="text-muted">Next task: </span>
+              <span className={cn('font-medium', next.state === 'blocked' ? 'text-danger' : 'text-accent')}>
+                {next.label}
+              </span>
+              <p className="text-[10px] text-muted leading-tight mt-0.5">{next.text}</p>
+            </div>
+          )}
+        </div>
+      }
+    >
+      <div
+        tabIndex={0}
+        role="status"
+        aria-label={`Readiness: ${percent}% complete, ${done} of ${total} checks passed.${next ? ` Next task: ${next.label}.` : ''}`}
+        className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-full cursor-default inline-flex shrink-0"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        {isComplete ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-success-soft text-success border border-success/30 h-6 select-none">
+            <CheckCircle2Icon className="h-3 w-3 shrink-0" />
+            <span>Ready</span>
+          </span>
+        ) : next?.state === 'blocked' ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-danger-soft/70 text-danger border border-danger/30 h-6 select-none">
+            <span className="h-1.5 w-1.5 rounded-full bg-danger shrink-0" />
+            <span className="font-mono text-[11px]">{percent}%</span>
+            <span className="text-[10px] uppercase tracking-wider font-semibold">Blocked</span>
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium bg-subtle text-ink-soft border border-line h-6 select-none">
+            <span className="relative flex h-2 w-2 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent/40 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent" />
+            </span>
+            <span className="font-mono text-[11px] font-medium">{percent}%</span>
+            <span className="text-[10px] text-muted">({done}/{total})</span>
+          </span>
+        )}
+      </div>
+    </Tooltip>
+  );
 }
 
 /** How far an agent is from live, and its next step (the readiness model), as a link to where it is done. */
