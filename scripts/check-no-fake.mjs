@@ -2,8 +2,9 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { SKIPPED, violations } from './no-fake-rules.mjs';
 
-// Scans the app source and the files that configure where it talks to, then the build output.
-const ROOTS = ['src'];
+// Scans the app source, the banking gateway's production source (its mock/ folder is deliberately outside the scan:
+// it is the one sanctioned place for mock data), the files that configure where the app talks to, then the build.
+const ROOTS = ['src', 'services/banking-gateway/src'];
 const FILES = ['vite.config.ts', 'index.html', '.env.example'];
 
 const walk = (d) => {

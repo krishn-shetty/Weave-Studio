@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CircleAlertIcon, MicIcon, RotateCcwIcon, SendHorizontalIcon, SquareIcon } from 'lucide-react';
+import { BotIcon, CircleAlertIcon, LandmarkIcon, MicIcon, RotateCcwIcon, SendHorizontalIcon, SquareIcon } from 'lucide-react';
 import { isWebChannel, type AgentConfig, type ChannelType } from '../../../types/studio';
 import type { TestSession } from '../../../hooks/useTestSession';
 import { Button } from '../../ui/Button';
@@ -8,6 +8,8 @@ import { StatusChip } from '../../ui/StatusChip';
 import { Segmented } from '../../ui/Segmented';
 import { ChatForm } from './ChatForm';
 import { VoiceBubble } from './VoiceBubble';
+import { AgentSelector } from './AgentSelector';
+import { usesGateway } from '../../../models/bankingTools';
 import { cn, easeOut, inputClass } from '../../../utils/styles';
 
 interface TestConsoleProps {
@@ -17,11 +19,16 @@ interface TestConsoleProps {
   /** Saves pending edits; resolves false if the draft could not be saved. */
   onBeforeStart: () => Promise<boolean>;
   hasUnsaved: boolean;
+  currentAgentId?: string;
+  onSwitchAgent?: (agentId: string) => void;
 }
 
-const suggestions = ['When is my bill due?', 'Can I speak to a person?', 'Please call me back', 'Thanks, goodbye'];
+const defaultSuggestions = ['When is my bill due?', 'Can I speak to a person?', 'Please call me back', 'Thanks, goodbye'];
+const bankingSuggestions = ['What is my account balance?', 'Show my recent transactions', 'Can I speak to a person?', 'Thanks, goodbye'];
 
-export function TestConsole({ session, config, revision, onBeforeStart, hasUnsaved }: TestConsoleProps) {
+export function TestConsole({ session, config, revision, onBeforeStart, hasUnsaved, currentAgentId, onSwitchAgent }: TestConsoleProps) {
+  const isBanking = usesGateway(config);
+  const suggestions = isBanking ? bankingSuggestions : defaultSuggestions;
   // One tab per web channel type the draft has enabled; the server is asked for that channel by its id.
   const webChannels = (config.channels ?? []).filter((c) => c.enabled && isWebChannel(c.type));
   const channelTypes = [...new Set(webChannels.map((c) => c.type))];
@@ -74,7 +81,7 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
   const conversation = (
     <div
       ref={listRef}
-      className={cn('space-y-3 overflow-y-auto px-4 py-5', isVoice ? 'max-h-[360px] min-h-[160px]' : 'flex-1')}
+      className={cn('min-h-0 space-y-3 overflow-y-auto px-4 py-5', isVoice ? 'max-h-[360px] min-h-[160px] lg:max-h-none lg:flex-1' : 'flex-1')}
       aria-live="polite"
       aria-label={isVoice ? 'Live transcript' : 'Conversation'}
     >
@@ -99,7 +106,7 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
             <div
               className={cn(
                 'max-w-[80%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm',
-                m.from === 'user' ? 'bg-accent text-accent-contrast rounded-br-sm' : 'bg-subtle text-ink border border-line rounded-bl-sm',
+                m.from === 'user' ? 'bg-accent text-accent-ink rounded-br-sm' : 'bg-subtle text-ink border border-line rounded-bl-sm',
                 m.partial && 'opacity-80'
               )}
             >
@@ -164,10 +171,19 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
   );
 
   return (
-    <section aria-labelledby="console-title" className="flex min-h-[560px] flex-col rounded-xl border border-line bg-surface">
+    <section aria-labelledby="console-title" className="flex min-h-[560px] min-w-0 flex-col overflow-hidden rounded-xl border border-line bg-surface lg:h-[720px]">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="flex flex-wrap items-center gap-2">
           <h2 id="console-title" className="text-sm font-semibold text-ink">Talk to your draft</h2>
+          {currentAgentId && onSwitchAgent && (
+            <AgentSelector
+              currentAgentId={currentAgentId}
+              onSelect={(id) => {
+                if (active) session.stop();
+                onSwitchAgent(id);
+              }}
+            />
+          )}
           <StatusChip className="font-mono">draft · rev {revision}</StatusChip>
           <StatusChip tone={live ? 'success' : 'neutral'}>{live ? 'Live · Real API' : 'Real LiveKit'}</StatusChip>
         </div>
@@ -197,13 +213,40 @@ export function TestConsole({ session, config, revision, onBeforeStart, hasUnsav
       </div>
 
       {!showing ? (
-        <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 text-center">
-          <p className="text-base font-medium text-ink">The agent speaks first.</p>
+        <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 text-center">
+          {isBanking ? (
+            <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-accent/25 bg-accent-soft/40 px-3 py-1 text-xs font-medium text-accent">
+              <LandmarkIcon className="h-3.5 w-3.5" aria-hidden />
+              <span>Banking AI Agent · 33 Tools Connected</span>
+            </div>
+          ) : (
+            <div className="mb-4 inline-flex items-center gap-1.5 rounded-full border border-line bg-subtle px-3 py-1 text-xs font-medium text-ink-soft">
+              <BotIcon className="h-3.5 w-3.5" aria-hidden />
+              <span>{config.agent?.name || 'Configured Draft Agent'}</span>
+            </div>
+          )}
+
+          <p className="text-base font-semibold text-ink">The agent speaks first.</p>
           <p className="mt-1 max-w-sm text-sm text-muted">
             {isVoice
               ? 'Talk to the live runtime worker over LiveKit. What you both say prints as a chat while you talk, and you can type too.'
               : 'Chat with the live runtime worker over LiveKit. Replies stream in as the agent writes them.'}
           </p>
+
+          {isBanking && (
+            <div className="mt-4 max-w-md rounded-lg border border-line bg-subtle/50 p-3 text-left text-xs space-y-1.5">
+              <div className="flex items-center justify-between font-medium text-ink">
+                <span>Demo Rehearsal Credentials</span>
+                <span className="text-[11px] text-muted">Mock Bank Host</span>
+              </div>
+              <p className="text-muted leading-relaxed">
+                • <strong className="text-ink">Phone Code:</strong> 1234567 | <strong className="text-ink">PIN:</strong> 135790 (3 accounts)<br />
+                • <strong className="text-ink">Account & OTP:</strong> 500000000201 | NRIC: 1234567<br />
+                • <strong className="text-ink">Entitlement Test:</strong> 500000000301 | NRIC: 7654321 (Balance refused)
+              </p>
+            </div>
+          )}
+
           {hasUnsaved && (
             <p className="mt-3 text-[13px] text-ink-soft">You have unsaved changes. Tests use the saved draft, so you’ll be asked to save first.</p>
           )}

@@ -25,20 +25,34 @@ export interface Starter {
 
 // The words a starter brings are a beginning: the setup asks the person to make the instructions their business's own.
 export const starters: Starter[] = [
-{
-  id: 'customer_care',
-  name: 'Customer care',
-  summary: 'Answers questions about the service, and passes people to the team when it can’t help.',
-  icon: 'headset',
-  personaName: 'Ada',
-  tone: 'warm',
-  recommended: true,
-  greeting: "Hi, you've reached {company}. I'm {persona}. How can I help today?",
-  instructions:
-  'Help customers with questions about their account, bills and the service. Ask one question at a time. Never guess account details; if you cannot answer, offer to pass them to a person on the team.',
-  rules: 'Be concise. Offer a person when the customer asks for one.',
-  actions: { endCall: true, handOver: true }
-},
+  {
+    id: 'customer_care',
+    name: 'Customer care',
+    summary: 'Answers questions about the service, and passes people to the team when it can’t help.',
+    icon: 'headset',
+    personaName: 'Ada',
+    tone: 'warm',
+    recommended: true,
+    greeting: "Hi, you've reached {company}. I'm {persona}. How can I help today?",
+    instructions:
+      'Help customers with questions about their account, bills and the service. Ask one question at a time. Never guess account details; if you cannot answer, offer to pass them to a person on the team.',
+    rules: 'Be concise. Offer a person when the customer asks for one.',
+    actions: { endCall: true, handOver: true }
+  },
+  {
+    id: 'banking_assistant',
+    name: 'Banking assistant',
+    summary: 'Greets customers, handles business banking enquiries, balances, transactions, and secure authentication.',
+    icon: 'building',
+    personaName: 'Weave Banking Assistant',
+    tone: 'formal',
+    recommended: true,
+    greeting: "Good morning, thank you for calling {company} Business Banking. I'm your virtual banking assistant. How can I help you today?",
+    instructions:
+      'You are the virtual banking assistant for {company} Business Banking. Help customers with their account balances, recent transactions, incoming funds, statements, cheque status, stop cheques, rates, and branch details. Always ensure authentication before disclosing any account information. If the customer is not verified, prompt for verification. Never guess account balances or secrets. If you cannot help, offer a transfer to a Service Manager.',
+    rules: 'Be concise, professional, and secure. Never invent account data or accept unverified access.',
+    actions: { endCall: true, handOver: true, details: true },
+  },
 {
   id: 'front_desk',
   name: 'Front desk',

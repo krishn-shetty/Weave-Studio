@@ -1,11 +1,14 @@
-import React from 'react';
-import { ShieldCheckIcon } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { LandmarkIcon, ShieldCheckIcon } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStudio } from '../contexts/StudioContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { Toggle } from '../components/ui/Toggle';
 import { Segmented } from '../components/ui/Segmented';
 import { StatusChip } from '../components/ui/StatusChip';
+import { gateway } from '../api/gateway';
+import type { GatewayHealth } from '../api/gatewayTypes';
 
 const roleText = {
   admin: 'Can edit, publish and deploy anywhere, including Production.',
@@ -17,6 +20,17 @@ export function Settings() {
   const { user } = useAuth();
   const { technicalNames, setTechnicalNames } = useStudio();
   const { theme, setTheme, density, setDensity } = useTheme();
+  const [health, setHealth] = useState<GatewayHealth | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    gateway
+      .health(controller.signal)
+      .then(setHealth)
+      .catch(() => setHealth(null));
+    return () => controller.abort();
+  }, []);
+
   if (!user) return null;
 
   return (
@@ -81,6 +95,42 @@ export function Settings() {
             </div>
             <Toggle checked={technicalNames} onChange={setTechnicalNames} label="Technical names" />
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="banking-gateway" className="mt-8 border-b border-line pb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <LandmarkIcon className="h-4 w-4 text-muted" aria-hidden />
+            <h2 id="banking-gateway" className="text-sm font-semibold text-ink">Banking Gateway & Account Details</h2>
+          </div>
+          {health ? (
+            <StatusChip tone={health.hosts === 'mock' ? 'warning' : 'success'}>
+              {health.hosts === 'mock' ? 'Mock Bank Systems' : 'Live Gateway'}
+            </StatusChip>
+          ) : (
+            <StatusChip tone="neutral">Gateway Standby</StatusChip>
+          )}
+        </div>
+        <p className="mt-1 text-[13px] text-muted">
+          The Banking Gateway enforces authentication state machines, business entitlements, masked identifiers, and two-phase confirmations.
+        </p>
+
+        <div className="mt-4 rounded-lg border border-line bg-surface p-4 text-[13px] space-y-3">
+          <div className="flex justify-between items-center text-sm">
+            <span className="font-medium text-ink">Rehearsal & Demo Logins</span>
+            <Link to="/banking" className="text-accent text-[13px] hover:underline">
+              Open Live Banking Conversation →
+            </Link>
+          </div>
+          <dl className="grid gap-2 text-xs sm:grid-cols-[140px_1fr]">
+            <dt className="text-muted">Phone Code & PIN:</dt>
+            <dd className="font-mono text-ink">Code: 1234567 | PIN: 135790 (3 accounts)</dd>
+            <dt className="text-muted">Account & OTP:</dt>
+            <dd className="font-mono text-ink">Acct: 500000000201 | NRIC: 1234567 (+ OTP from console)</dd>
+            <dt className="text-muted">Account details:</dt>
+            <dd className="text-ink-soft">Masked by default (•••• 0101). Toggle eye icon to reveal full numbers from mock host.</dd>
+          </dl>
         </div>
       </section>
 

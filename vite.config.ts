@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url'
-import { defineConfig, loadEnv, type ProxyOptions } from 'vite'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from 'vite'
 import react from '@vitejs/plugin-react'
 import { forwardedUser } from './src/utils/forwardedUser'
+import { gatewayRoute } from './src/utils/gatewayProxy'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }) => {
@@ -13,6 +15,11 @@ export default defineConfig(({ command, mode }) => {
   }
   const apiKey = env.AGENT_BUILDER_API_KEY || ''
   const fallbackUser = env.AGENT_BUILDER_USER || ''
+
+  // The banking gateway is optional: without BANKING_GATEWAY_URL and BANKING_GATEWAY_TOKEN, /gateway answers 503.
+  const gatewayTarget = (env.BANKING_GATEWAY_URL || '').trim()
+  const gatewayToken = (env.BANKING_GATEWAY_TOKEN || '').trim()
+  const rehearsals = env.BANKING_GATEWAY_REHEARSALS === 'on'
 
   const proxy: Record<string, ProxyOptions> = {
     '/api': {
@@ -33,8 +40,49 @@ export default defineConfig(({ command, mode }) => {
     },
   }
 
+  if (gatewayTarget) {
+    proxy['/gateway'] = {
+      target: gatewayTarget,
+      changeOrigin: true,
+      rewrite: (path: string) => path.replace(/^\/gateway/, ''),
+      configure: (proxyServer) => {
+        proxyServer.on('proxyReq', (proxyReq, req) => {
+          const path = (req.url ?? '/').replace(/^\/gateway/, '')
+          const route = gatewayRoute(req.method ?? 'GET', path, req.headers['x-call-id'], rehearsals)
+          // Same-origin to Studio already; the gateway's CORS list is for browsers calling it directly.
+          proxyReq.removeHeader('origin')
+          proxyReq.removeHeader('cookie')
+          proxyReq.removeHeader('x-user')
+          if (route === 'runtime') proxyReq.setHeader('Authorization', `Bearer ${gatewayToken}`)
+          else if (route !== 'channel') proxyReq.destroy() // the guard below already refused it; never forward
+        })
+      },
+    }
+  }
+
+  /** Answers /gateway requests the proxy must not forward, before the proxy sees them. */
+  const gatewayGuard = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const refuse = (status: number, error: string, message: string) => {
+      res.statusCode = status
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error, message }))
+    }
+    if (!gatewayTarget || !gatewayToken) {
+      return refuse(503, 'gateway_not_configured', 'BANKING_GATEWAY_URL and BANKING_GATEWAY_TOKEN are required for this Studio server.')
+    }
+    if (gatewayRoute(req.method ?? 'GET', req.url ?? '/', req.headers['x-call-id'], rehearsals) === 'deny') {
+      return refuse(403, 'route_not_allowed', 'Studio does not forward this gateway route.')
+    }
+    next()
+  }
+  const gatewayGuardPlugin: Plugin = {
+    name: 'weave-gateway-guard',
+    configureServer: (server) => void server.middlewares.use('/gateway', gatewayGuard),
+    configurePreviewServer: (server) => void server.middlewares.use('/gateway', gatewayGuard),
+  }
+
   return {
-    plugins: [react()],
+    plugins: [react(), gatewayGuardPlugin],
     resolve: {
       // Matches "paths" in tsconfig.json; shadcn components import from "@/…".
       alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },

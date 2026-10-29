@@ -6,23 +6,29 @@ import { Button } from '../../ui/Button';
 import { fieldId } from '../../../utils/path';
 import { inputClass } from '../../../utils/styles';
 import { toolLabel } from './toolTypes';
+import { BankingToolsSection } from './BankingToolsSection';
+import { GATEWAY_CONNECTION } from '../../../models/bankingTools';
 
 interface ToolsEditorProps {
   readonly config: AgentConfig;
   readonly disabled: boolean;
   readonly update: (path: Path, value: unknown) => void;
+  /** Whole-config edits (one undo step); omitted when the draft is read-only. */
+  readonly replaceConfig?: (next: AgentConfig) => void;
   readonly onOpenJson: () => void;
 }
 
-export function ToolsEditor({ config, disabled, update, onOpenJson }: ToolsEditorProps) {
+export function ToolsEditor({ config, disabled, update, replaceConfig, onOpenJson }: ToolsEditorProps) {
   return (
     <div className="space-y-3">
+      <BankingToolsSection config={config} disabled={disabled} replaceConfig={replaceConfig} />
       <ul className="divide-y divide-line rounded-lg border border-line bg-surface">
         {(config.tools ?? []).map((tool, i) =>
         <li key={`${tool.id}-${i}`} id={fieldId(['tools', i])} className="scroll-mt-28 px-4 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <code className="font-mono text-[13px] font-medium text-ink">{tool.id}</code>
               <StatusChip>{toolLabel(tool)}</StatusChip>
+              {tool.connection === GATEWAY_CONNECTION && <StatusChip tone="accent">Banking gateway</StatusChip>}
               {tool.type === 'mcp' && <StatusChip tone="warning">Not available yet</StatusChip>}
               {tool.connection &&
             <span className="text-xs text-muted">

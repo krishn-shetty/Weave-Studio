@@ -182,6 +182,7 @@ export function DetailedView({ editor, initialGroup, onOpenJson, only }: Detaile
                             config={config}
                             disabled={disabled}
                             update={update}
+                            replaceConfig={editor.canEdit ? editor.replaceConfig : undefined}
                             onOpenJson={onOpenJson}
                           />
                         )}

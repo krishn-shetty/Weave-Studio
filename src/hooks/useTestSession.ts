@@ -59,6 +59,15 @@ export interface TestSession {
   error: string | null;
   /** Why the last conversation ended, in plain words; set with status 'ended'. */
   endReason: string | null;
+  /** The LiveKit room of the current conversation, while joined. */
+  room: string | null;
+  /**
+   * This conversation's LiveKit join token, while joined. The banking panel presents it to the banking gateway's
+   * channel routes to prove it is this call's device; it is cleared when the conversation ends.
+   */
+  roomToken: string | null;
+  /** When the current conversation started (ms since epoch), for placing other timelines next to the trace. */
+  startedAt: number | null;
   /** The browser blocked the agent's audio until the person clicks; `enableAudio` (from a click) lets it play. */
   audioBlocked: boolean;
   /** The microphone could not be turned on; `retryMic` (from a click) asks again. */
@@ -95,6 +104,9 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
   const [endReason, setEndReason] = useState<string | null>(null);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [micError, setMicError] = useState<string | null>(null);
+  const [room, setRoom] = useState<string | null>(null);
+  const [roomToken, setRoomToken] = useState<string | null>(null);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
 
   const roomRef = useRef<Room | null>(null);
   const audioHostRef = useRef<HTMLDivElement | null>(null);
@@ -218,6 +230,7 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
       }
     }
     setAudioBlocked(false);
+    setRoomToken(null);
   }, [clearTimers, stopMeters]);
 
   useEffect(() => {
@@ -260,8 +273,8 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
   }, []);
 
   const primeAudio = useCallback(() => {
-    // Browsers only let audio start from a click. A context resumed here, inside the click, stays unlocked for the
-    // room, which plays the agent through it.
+    // Browsers only let audio start from a click. Resuming a context here, inside the click, unlocks audio for the
+    // page (the agent itself plays through audio elements; see webAudioMix below).
     try {
       const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!Ctor) return;
@@ -300,7 +313,9 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         // Reads the published track; a muted mic simply reads as silence.
         if (mic?.audioTrack) setMeter(userMeterRef, meterFor(mic.audioTrack));
         restBubble();
-        addTrace([{ kind: 'session', label: 'Microphone on', detail: 'Audio track published to the room', status: 'ok' }]);
+        // Which input the browser picked: a wrong default (e.g. a disconnected headset) shows up here.
+        const device = mic?.audioTrack?.mediaStreamTrack?.label;
+        addTrace([{ kind: 'session', label: 'Microphone on', detail: `Audio track published to the room${device ? ` · ${device}` : ''}`, status: 'ok' }]);
       } catch (err) {
         if (!isCurrent()) return;
         setMicError(micErrorMessage(err));
@@ -333,6 +348,8 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
       const run = (runRef.current += 1);
       const isCurrent = () => run === runRef.current;
       startRef.current = Date.now();
+      setStartedAt(startRef.current);
+      setRoom(null);
       micRetryRef.current = null;
       mutedRef.current = false;
       setChannel(type);
@@ -416,11 +433,13 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         }
       };
 
-      const audioContext = audioContextRef.current;
       const room = new LiveKitRoom({
         audioCaptureDefaults: { autoGainControl: true, echoCancellation: true, noiseSuppression: true },
-        // Play through the context unlocked by the click, so the greeting is heard without a second click.
-        webAudioMix: audioContext ? { audioContext } : false,
+        // The agent plays through ordinary audio elements, not a Web Audio mix: Chrome's echo cancellation only
+        // covers element playback. Through a Web Audio mix, laptop speakers leak the agent's voice into the built-in
+        // microphone, the runtime hears itself and the caller is cut off (it only worked with earphones). The Start
+        // click gives the page user activation, so the greeting still plays; a blocked start shows Enable audio.
+        webAudioMix: false,
       });
       roomRef.current = room;
       const isAgent = (p: Participant) => isAgentParticipant(p, ParticipantKind.AGENT);
@@ -565,6 +584,8 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
         return;
       }
       reportLiveKitStatus({ state: 'ok', at: Date.now(), connectMs: Date.now() - startRef.current });
+      setRoom(session.room);
+      setRoomToken(session.token);
       addTrace([{ kind: 'session', label: 'Joined the room', detail: `as ${room.localParticipant.identity}`, status: 'ok' }]);
       startMeters();
 
@@ -674,6 +695,9 @@ export function useTestSession(agentId: string, _config?: AgentConfig, _revision
     isMuted,
     error,
     endReason,
+    room,
+    roomToken,
+    startedAt,
     audioBlocked,
     micError,
     primeAudio,

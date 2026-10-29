@@ -272,7 +272,7 @@ export function CallDetail() {
                           "max-w-[80%] rounded-xl px-4 py-2.5 text-sm",
                           isAgent
                             ? "border border-line bg-surface text-ink"
-                            : "bg-accent text-accent-contrast",
+                            : "bg-accent text-accent-ink",
                         )}
                       >
                         <div className="flex items-center justify-between gap-3 text-xs opacity-70">

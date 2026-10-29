@@ -13,6 +13,7 @@ import { Knowledge } from './pages/Knowledge';
 import { Calls } from './pages/Calls';
 import { CallDetail } from './pages/CallDetail';
 import { Library } from './pages/Library';
+import { Banking } from './pages/Banking';
 import { Settings } from './pages/Settings';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
@@ -54,6 +55,7 @@ const routes = [
           { path: 'calls', element: <Calls /> },
           { path: 'calls/:callId', element: <CallDetail /> },
           { path: 'library', element: <Library /> },
+          { path: 'banking', element: <Banking /> },
           { path: 'settings', element: <Settings /> },
           { path: 'analytics', element: <Analytics /> },
           { path: 'analytics/*', element: <Analytics /> },

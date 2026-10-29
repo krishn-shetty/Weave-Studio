@@ -13,6 +13,9 @@ export type BubbleState =
   | 'speaking'
   | 'muted'
   | 'reconnecting'
+  | 'auth_required'
+  | 'tool_execution'
+  | 'success'
   | 'error'
   | 'ended';
 
@@ -34,6 +37,12 @@ interface VoiceBubbleProps {
   onRetryMic?: () => void;
   /** Shorter, without captions: for when a live transcript is shown under the bubble. */
   compact?: boolean;
+  /** The bubble's heading (default "Live Voice Agent"). */
+  title?: string;
+  /** Wording per state for voice that is not the LiveKit runtime (e.g. the browser's speech service). */
+  descriptions?: Partial<Record<BubbleState, string>>;
+  /** The start button's label (default "Start Voice Conversation"). */
+  startLabel?: string;
 }
 
 const stateLabels: Record<BubbleState, { label: string; desc: string }> = {
@@ -45,6 +54,9 @@ const stateLabels: Record<BubbleState, { label: string; desc: string }> = {
   speaking: { label: 'Speaking', desc: 'Agent is speaking through TTS' },
   muted: { label: 'Microphone muted', desc: 'Click unmute to speak' },
   reconnecting: { label: 'Reconnecting…', desc: 'Restoring audio stream' },
+  auth_required: { label: 'Authentication required', desc: 'Please verify your identity using the secure keypad or spoken digits' },
+  tool_execution: { label: 'Executing banking tool…', desc: 'Calling banking gateway to process your request' },
+  success: { label: 'Request completed', desc: 'Banking operation completed successfully' },
   error: { label: 'Connection error', desc: 'Failed to establish voice session' },
   ended: { label: 'Call ended', desc: 'Conversation completed' },
 };
@@ -59,6 +71,9 @@ const orbStates: Record<BubbleState, OrbState> = {
   thinking: 'live',
   speaking: 'live',
   muted: 'live',
+  auth_required: 'live',
+  tool_execution: 'live',
+  success: 'live',
   error: 'error',
 };
 
@@ -84,6 +99,9 @@ export function VoiceBubble({
   micError,
   onRetryMic,
   compact = false,
+  title = 'Live Voice Agent',
+  descriptions,
+  startLabel = 'Start Voice Conversation',
 }: VoiceBubbleProps) {
   const [showCaptions, setShowCaptions] = useState(true);
   const orbState = orbStates[state];
@@ -97,7 +115,7 @@ export function VoiceBubble({
       <div className="flex w-full items-center justify-between text-xs text-muted">
         <span className="flex items-center gap-1.5 font-medium">
           <Volume2Icon className="h-3.5 w-3.5 text-accent" aria-hidden />
-          Live Voice Agent
+          {title}
         </span>
         <span
           aria-live="polite"
@@ -113,7 +131,7 @@ export function VoiceBubble({
       {/* State label & description */}
       <div className="text-center">
         <h3 className="text-xl font-semibold text-ink">{info.label}</h3>
-        <p className="mt-1 max-w-sm text-sm text-muted">{errorMessage || info.desc}</p>
+        <p className="mt-1 max-w-sm text-sm text-muted">{errorMessage || descriptions?.[state] || info.desc}</p>
       </div>
 
       {inCall && audioBlocked && (
@@ -175,7 +193,7 @@ export function VoiceBubble({
         ) : (
           <Button variant="primary" className="rounded-full px-5" onClick={onStartVoice}>
             {orbState === 'error' ? <RotateCcwIcon className="h-4 w-4" aria-hidden /> : <MicIcon className="h-4 w-4" aria-hidden />}
-            {orbState === 'error' ? 'Try again' : 'Start Voice Conversation'}
+            {orbState === 'error' ? 'Try again' : startLabel}
           </Button>
         )}
 
